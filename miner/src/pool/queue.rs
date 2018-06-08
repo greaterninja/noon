@@ -309,7 +309,7 @@ impl TransactionQueue {
 	}
 
 	/// Culls all stalled transactions from the pool.
-	pub fn cull<C: client::NonceClient + Clone>(
+	pub fn cull<C: client::NonceClient>(
 		&self,
 		client: C,
 	) {
@@ -327,11 +327,10 @@ impl TransactionQueue {
 			current_id.checked_sub(gap)
 		};
 
-		let state_readiness = ready::State::new(client.clone(), stale_id, nonce_cap);
+		let state_readiness = ready::State::new(client, stale_id, nonce_cap);
 
 		let removed = self.pool.write().cull(None, state_readiness);
 		debug!(target: "txqueue", "Removed {} stalled transactions. {}", removed, self.status());
-		debug!(target: "txqueue", "Pool {:?}", self.pool.read().status(ready::State::new(client, None, None)));
 	}
 
 	/// Returns next valid nonce for given sender
