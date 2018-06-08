@@ -313,7 +313,7 @@ impl Miner {
 	fn prepare_block<C>(&self, chain: &C) -> (ClosedBlock, Option<H256>) where
 		C: BlockChain + CallContract + BlockProducer + Nonce + Sync,
 	{
-		trace_time!("prepare_block");
+		trace_time!("miner::prepare_block");
 		let chain_info = chain.chain_info();
 
 		// Open block
@@ -1039,6 +1039,8 @@ impl miner::MinerService for Miner {
 		// Then import all transactions...
 		let client = self.pool_client(chain);
 		{
+			trace_time!("miner::reimport_retracted");
+			info!(target: "miner", "Import retracted::START");
 			retracted
 				.par_iter()
 				.for_each(|hash| {
@@ -1053,6 +1055,7 @@ impl miner::MinerService for Miner {
 						txs,
 					);
 				});
+			info!(target: "miner", "Import retracted::DONE");
 		}
 
 		// ...and at the end remove the old ones
