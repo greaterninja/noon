@@ -351,7 +351,7 @@ impl Importer {
 		};
 
 		{
-			if !imported_blocks.is_empty() && is_empty {
+			if !imported_blocks.is_empty() && is_block_queue_empty {
 				let (enacted, retracted) = self.calculate_enacted_retracted(&import_results);
 
 				if is_block_queue_empty {
