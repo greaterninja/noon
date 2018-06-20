@@ -19,7 +19,7 @@
 use std::{cmp, fmt};
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicUsize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use ethereum_types::{H256, U256, Address};
 use parking_lot::RwLock;
@@ -138,6 +138,43 @@ impl CachedPending {
 	}
 }
 
+#[derive(Debug, Default)]
+struct RecentlyRejected {
+	inner: RwLock<HashMap<H256, transaction::Error>>,
+}
+
+impl RecentlyRejected {
+	fn clear(&self) {
+		self.inner.write().clear();
+	}
+
+	fn get(&self, hash: &H256) -> Option<transaction::Error> {
+		self.inner.read().get(hash).cloned()
+	}
+
+	fn insert<T>(&self, hash: H256, result: &Result<T, transaction::Error>) {
+		let err = match result {
+			Ok(_) => return,
+			Err(e) => e.clone(),
+		};
+
+		if self.inner.read().contains_key(&hash) {
+			return;
+		}
+
+		let mut inner = self.inner.write();
+		inner.insert(hash, err);
+
+		// clean up
+		if inner.len() > 4096 {
+			let to_remove: Vec<_> = inner.keys().take(2048).cloned().collect();
+			for key in to_remove {
+				inner.remove(&key);
+			}
+		}
+	}
+}
+
 /// Ethereum Transaction Queue
 ///
 /// Responsible for:
@@ -150,6 +187,7 @@ pub struct TransactionQueue {
 	pool: RwLock<Pool>,
 	options: RwLock<verifier::Options>,
 	cached_pending: RwLock<CachedPending>,
+	recently_rejected: RecentlyRejected,
 }
 
 impl TransactionQueue {
@@ -164,6 +202,7 @@ impl TransactionQueue {
 			pool: RwLock::new(txpool::Pool::new(Default::default(), scoring::NonceAndGasPrice(strategy), limits)),
 			options: RwLock::new(verification_options),
 			cached_pending: RwLock::new(CachedPending::none()),
+			recently_rejected: RecentlyRejected::default(),
 		}
 	}
 
@@ -188,21 +227,38 @@ impl TransactionQueue {
 		let options = self.options.read().clone();
 
 		let min_effective_gas_price = self.pool.read().minimal_entry_score().map(scoring::bump_gas_price);
-		let verifier = verifier::Verifier::new(client, options, self.insertion_id.clone(), min_effective_gas_price);
+		let verifier = verifier::Verifier::new(
+			client,
+			options,
+			self.insertion_id.clone(),
+			min_effective_gas_price
+		);
 		let results = transactions
 			.into_iter()
 			.map(|transaction| {
-				if self.pool.read().find(&transaction.hash()).is_some() {
-					bail!(transaction::Error::AlreadyImported)
+				let hash = transaction.hash();
+				if let Some(err) = self.recently_rejected.get(&hash) {
+					warn!(target: "txpool", "[{:?}] Rejecting recently rejected: {:?}", hash, err);
+					return (Err(err), hash);
 				}
 
-				verifier.verify_transaction(transaction)
+				if self.pool.read().find(&hash).is_some() {
+					return (Err(transaction::Error::AlreadyImported), hash)
+				}
+
+				(verifier.verify_transaction(transaction), hash)
 			})
-			.map(|result| result.and_then(|verified| {
+			.map(|(result, hash)| (result.and_then(|verified| {
 				self.pool.write().import(verified)
 					.map(|_imported| ())
 					.map_err(convert_error)
-			}))
+			}), hash))
+			.map(|(result, hash)| {
+				if result.is_err() {
+					self.recently_rejected.insert(hash, &result);
+				}
+				result
+			})
 			.collect::<Vec<_>>();
 
 		// Notify about imported transactions.
@@ -330,6 +386,7 @@ impl TransactionQueue {
 
 		let state_readiness = ready::State::new(client, stale_id, nonce_cap);
 
+		self.recently_rejected.clear();
 		let removed = self.pool.write().cull(None, state_readiness);
 		debug!(target: "txqueue", "Removed {} stalled transactions. {}", removed, self.status());
 	}
