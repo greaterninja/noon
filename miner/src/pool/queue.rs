@@ -23,6 +23,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use ethereum_types::{H256, U256, Address};
 use parking_lot::RwLock;
+use rayon::prelude::*;
 use transaction;
 use txpool::{self, Verifier};
 
@@ -234,7 +235,7 @@ impl TransactionQueue {
 			min_effective_gas_price
 		);
 		let results = transactions
-			.into_iter()
+			.into_par_iter()
 			.map(|transaction| {
 				let hash = transaction.hash();
 				if let Some(err) = self.recently_rejected.get(&hash) {
