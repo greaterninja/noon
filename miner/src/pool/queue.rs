@@ -254,20 +254,13 @@ impl TransactionQueue {
 			.into_par_iter()
 			.map(|transaction| {
 				let hash = transaction.hash();
-<<<<<<< HEAD
-				if let Some(err) = self.recently_rejected.get(&hash) {
-					trace!(target: "txpool", "[{:?}] Rejecting recently rejected: {:?}", hash, err);
-					return (Err(err), hash);
-				}
-=======
->>>>>>> 43eb599... Don't cache AlreadyImported rejections.
 
 				if self.pool.read().find(&hash).is_some() {
 					return Err(transaction::Error::AlreadyImported);
 				}
 
 				if let Some(err) = self.recently_rejected.get(&hash) {
-					warn!(target: "txpool", "[{:?}] Rejecting recently rejected: {:?}", hash, err);
+					trace!(target: "txpool", "[{:?}] Rejecting recently rejected: {:?}", hash, err);
 					return Err(err);
 				}
 
