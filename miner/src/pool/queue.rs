@@ -239,7 +239,7 @@ impl TransactionQueue {
 			.map(|transaction| {
 				let hash = transaction.hash();
 				if let Some(err) = self.recently_rejected.get(&hash) {
-					warn!(target: "txpool", "[{:?}] Rejecting recently rejected: {:?}", hash, err);
+					trace!(target: "txpool", "[{:?}] Rejecting recently rejected: {:?}", hash, err);
 					return (Err(err), hash);
 				}
 
@@ -345,6 +345,9 @@ impl TransactionQueue {
 		>) -> T,
 	{
 		debug!(target: "txqueue", "Re-computing pending set for block: {}", block_number);
+		if block_number % 120 == 0 {
+			warn!(target: "txqueue", "Status: {}", self.status());
+		}
 		trace_time!("pool::collect_pending");
 		let ready = Self::ready(client, block_number, current_timestamp, nonce_cap);
 		collect(self.pool.read().pending(ready))
