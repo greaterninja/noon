@@ -168,6 +168,7 @@ impl RecentlyRejected {
 
 		// clean up
 		if inner.len() > 4096 {
+			warn!(target: "txqueue", "Hitting recently rejected limit.");
 			let to_remove: Vec<_> = inner.keys().take(2048).cloned().collect();
 			for key in to_remove {
 				inner.remove(&key);
