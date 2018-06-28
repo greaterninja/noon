@@ -23,7 +23,6 @@ use std::collections::{BTreeMap, HashMap};
 
 use ethereum_types::{H256, U256, Address};
 use parking_lot::RwLock;
-use rayon::prelude::*;
 use transaction;
 use txpool::{self, Verifier};
 
@@ -251,7 +250,7 @@ impl TransactionQueue {
 			transaction_to_replace,
 		);
 		let results = transactions
-			.into_par_iter()
+			.into_iter()
 			.map(|transaction| {
 				let hash = transaction.hash();
 
