@@ -153,7 +153,7 @@ impl<C: Fn(&Address) -> Option<U256>> txpool::Ready<VerifiedTransaction> for Opt
 		});
 		match tx.transaction.nonce.cmp(nonce) {
 			cmp::Ordering::Greater => txpool::Readiness::Future,
-			cmp::Ordering::Less => txpool::Readiness::Stale,
+			cmp::Ordering::Less => txpool::Readiness::Stalled,
 			cmp::Ordering::Equal => {
 				*nonce = *nonce + 1.into();
 				txpool::Readiness::Ready
