@@ -393,6 +393,11 @@ impl<T, S, L> Pool<T, S, L> where
 		self.worst_transactions.iter().next().map(|x| x.transaction.transaction.clone())
 	}
 
+	/// Returns senders ordered by priority of their transactions.
+	pub fn senders(&self) -> impl Iterator<Item=&T::Sender> {
+		self.best_transactions.iter().map(|tx| tx.transaction.sender())
+	}
+
 	/// Returns an iterator of pending (ready) transactions.
 	pub fn pending<R: Ready<T>>(&self, ready: R) -> PendingIterator<T, R, S, L> {
 		PendingIterator {
