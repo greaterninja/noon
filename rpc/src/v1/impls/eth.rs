@@ -612,7 +612,7 @@ impl<C, SN: ?Sized, S: ?Sized, M, EM, T: StateInfo + 'static> Eth for EthClient<
 
 		Box::new(future::ok(match num {
 			BlockNumber::Pending =>
-				self.miner.pending_transactions(block_number).map(|x| x.len().into()),
+				self.miner.pending_transactions_hashes().len(),
 			_ =>
 				self.client.block(block_number_to_id(num)).map(|block| block.transactions_count().into())
 		}))
