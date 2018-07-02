@@ -140,14 +140,32 @@ pub fn take_snapshot<W: SnapshotWriter + Send>(
 	let writer = Mutex::new(writer);
 	let chunker = engine.snapshot_components().ok_or(Error::SnapshotsUnsupported)?;
 	let snapshot_version = chunker.current_version();
-	let (state_hashes, block_hashes) = scope(|scope| {
+	let (state_hashes, block_hashes) = scope(|scope| -> Result<(Vec<H256>, Vec<H256>), Error> {
 		let writer = &writer;
 		let block_guard = scope.spawn(move || chunk_secondary(chunker, chain, block_at, writer, p));
-		let state_res = chunk_state(state_db, &state_root, writer, p);
 
-		state_res.and_then(|state_hashes| {
-			block_guard.join().map(|block_hashes| (state_hashes, block_hashes))
-		})
+		// Set the number of threads from ENV var `SNAPSHOT_THREADS`
+		let num_threads: usize = ::std::env::var("SNAPSHOT_THREADS")
+			.ok().and_then(|val| val.parse().ok())
+			.filter(|&val| val > 0 && val <= 256 && val % 2 == 0)
+			.unwrap_or(1);
+
+		let mut state_guards = Vec::with_capacity(num_threads as usize);
+
+		for part in 0..num_threads {
+			let state_guard = scope.spawn(move || chunk_state(state_db, &state_root, writer, p, part as u8, num_threads));
+			state_guards.push(state_guard);
+		}
+
+		let block_hashes = block_guard.join()?;
+		let mut state_hashes = Vec::new();
+
+		for guard in state_guards {
+			let mut part_state_hashes = guard.join()?.clone();
+			state_hashes.append(&mut part_state_hashes);
+		}
+
+		Ok((state_hashes, block_hashes))
 	})?;
 
 	info!("produced {} state chunks and {} block chunks.", state_hashes.len(), block_hashes.len());
@@ -176,6 +194,8 @@ pub fn take_snapshot<W: SnapshotWriter + Send>(
 /// Returns a list of chunk hashes, with the first having the blocks furthest from the genesis.
 pub fn chunk_secondary<'a>(mut chunker: Box<SnapshotComponents>, chain: &'a BlockChain, start_hash: H256, writer: &Mutex<SnapshotWriter + 'a>, progress: &'a Progress) -> Result<Vec<H256>, Error> {
 	let mut chunk_hashes = Vec::new();
+
+	return Ok(chunk_hashes);
 	let mut snappy_buffer = vec![0; snappy::max_compressed_len(PREFERRED_CHUNK_SIZE)];
 
 	{
@@ -198,6 +218,7 @@ pub fn chunk_secondary<'a>(mut chunker: Box<SnapshotComponents>, chain: &'a Bloc
 			chain,
 			start_hash,
 			&mut chunk_sink,
+			progress,
 			PREFERRED_CHUNK_SIZE,
 		)?;
 	}
@@ -240,11 +261,12 @@ impl<'a> StateChunker<'a> {
 		let compressed_size = snappy::compress_into(&raw_data, &mut self.snappy_buffer);
 		let compressed = &self.snappy_buffer[..compressed_size];
 		let hash = keccak(&compressed);
+		// let hash = H256::new();
 
 		self.writer.lock().write_state_chunk(hash, compressed)?;
 		trace!(target: "snapshot", "wrote state chunk. size: {}, uncompressed size: {}", compressed_size, raw_data.len());
 
-		self.progress.accounts.fetch_add(num_entries, Ordering::SeqCst);
+		// self.progress.accounts.fetch_add(num_entries, Ordering::SeqCst);
 		self.progress.size.fetch_add(compressed_size, Ordering::SeqCst);
 
 		self.hashes.push(hash);
@@ -264,7 +286,11 @@ impl<'a> StateChunker<'a> {
 ///
 /// Returns a list of hashes of chunks created, or any error it may
 /// have encountered.
-pub fn chunk_state<'a>(db: &HashDB, root: &H256, writer: &Mutex<SnapshotWriter + 'a>, progress: &'a Progress) -> Result<Vec<H256>, Error> {
+pub fn chunk_state<'a>(db: &HashDB, root: &H256, writer: &Mutex<SnapshotWriter + 'a>, progress: &'a Progress, part: u8, num_parts: usize) -> Result<Vec<H256>, Error> {
+	// Limit the number of accounts from ENV var `MAX_NUM_ACCOUNTS`
+	let max_num_accounts: Option<usize> = ::std::env::var("MAX_NUM_ACCOUNTS")
+		.ok().and_then(|val| val.parse().ok());
+
 	let account_trie = TrieDB::new(db, &root)?;
 
 	let mut chunker = StateChunker {
@@ -279,10 +305,38 @@ pub fn chunk_state<'a>(db: &HashDB, root: &H256, writer: &Mutex<SnapshotWriter +
 	let mut used_code = HashSet::new();
 
 	// account_key here is the address' hash.
-	for item in account_trie.iter()? {
+	let mut account_iter = account_trie.iter()?;
+
+	let bucket_size = 256 / num_parts;
+	let bucket_start = (part as usize) * bucket_size;
+	let bucket_end = (part as usize + 1) * bucket_size;
+
+	let mut seek_from = vec![0; 32];
+	seek_from[0] = bucket_start as u8;
+	account_iter.seek(&seek_from)?;
+	for item in account_iter {
 		let (account_key, account_data) = item?;
+
+		// Stop when the key is not included in the asked part
+		if account_key[0]  as usize >= bucket_end {
+			break;
+		}
+
 		let account = ::rlp::decode(&*account_data)?;
 		let account_key_hash = H256::from_slice(&account_key);
+
+		let mut account_size = 0;
+
+		if let Some(max_num_accounts) = max_num_accounts {
+			let num_accounts = progress.accounts.load(Ordering::Relaxed);
+			if  num_accounts % 1_000 == 0 {
+				let percent = (100.00 * num_accounts as f64) / (max_num_accounts as f64);
+				trace!(target: "snapshot", "Progress: {}%", percent);
+			}
+			if num_accounts > max_num_accounts {
+				break;
+			}
+		}
 
 		let account_db = AccountDB::from_hash(db, account_key_hash);
 
@@ -291,7 +345,13 @@ pub fn chunk_state<'a>(db: &HashDB, root: &H256, writer: &Mutex<SnapshotWriter +
 			if i > 0 {
 				chunker.write_chunk()?;
 			}
+			account_size += fat_rlp.len();
 			chunker.push(fat_rlp)?;
+		}
+
+		progress.accounts.fetch_add(1, Ordering::SeqCst);
+		if account_size > 1024 {
+			trace!(target: "snapshot", "Account 0x{:x} took {} bytes", account_key_hash, account_size);
 		}
 	}
 

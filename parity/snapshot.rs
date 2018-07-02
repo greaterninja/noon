@@ -253,14 +253,9 @@ impl SnapshotCommand {
 		let informant_handle = ::std::thread::spawn(move || {
 			::std::thread::sleep(Duration::from_secs(5));
 
-			let mut last_size = 0;
 			while !p.done() {
-				let cur_size = p.size();
-				if cur_size != last_size {
-					last_size = cur_size;
-					let bytes = ::informant::format_bytes(p.size());
-					info!("Snapshot: {} accounts {} blocks {}", p.accounts(), p.blocks(), bytes);
-				}
+				let bytes = ::informant::format_bytes(p.size());
+				info!("Snapshot: {} accounts {} blocks {}", p.accounts(), p.blocks(), bytes);
 
 				::std::thread::sleep(Duration::from_secs(5));
 			}
