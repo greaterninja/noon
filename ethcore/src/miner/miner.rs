@@ -1111,7 +1111,6 @@ impl miner::MinerService for Miner {
 		let client = self.pool_client(chain);
 		{
 			trace_time!("miner::reimport_retracted");
-			info!(target: "miner", "Import retracted::START");
 			retracted
 				.par_iter()
 				.for_each(|hash| {
@@ -1126,7 +1125,6 @@ impl miner::MinerService for Miner {
 						txs,
 					);
 				});
-			info!(target: "miner", "Import retracted::DONE");
 		}
 
 		if has_new_best_block || (imported.len() > 0 && self.options.reseal_on_uncle) {
