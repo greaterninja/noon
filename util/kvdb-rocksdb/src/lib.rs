@@ -36,7 +36,8 @@ use std::path::Path;
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use rocksdb::{
 	DB, Writable, WriteBatch, WriteOptions, IteratorMode, DBIterator,
-	Options, BlockBasedOptions, Direction, Cache, Column, ReadOptions
+	Options, BlockBasedOptions, Direction, Cache, Column, ReadOptions,
+	DBCompressionType
 };
 use interleaved_ordered::{interleave_ordered, InterleaveOrdered};
 
@@ -227,6 +228,7 @@ struct DBAndColumns {
 fn col_config(config: &DatabaseConfig, block_opts: &BlockBasedOptions) -> io::Result<Options> {
 	let mut opts = Options::new();
 
+	opts.set_compression_type(DBCompressionType::DBNoCompression);
 	opts.set_parsed_options("level_compaction_dynamic_level_bytes=true").map_err(other_io_err)?;
 
 	opts.set_block_based_table_factory(block_opts);
