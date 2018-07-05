@@ -228,7 +228,43 @@ struct DBAndColumns {
 fn col_config(config: &DatabaseConfig, block_opts: &BlockBasedOptions) -> io::Result<Options> {
 	let mut opts = Options::new();
 
-	opts.set_compression_type(DBCompressionType::DBNoCompression);
+	let compression_type = match ::std::env::var("ROCKSDB_COMPRESSION") {
+		Ok(val) => {
+			match val.as_str() {
+				"snappy" => {
+					info!("Using RocksDB Snappy compression.");
+					DBCompressionType::DBSnappyCompression
+				},
+				"lz4" => {
+					info!("Using RocksDB LZ4 compression.");
+					DBCompressionType::DBLz4Compression
+				},
+				"lz4h" => {
+					info!("Using RocksDB LZ4-H compression.");
+					DBCompressionType::DBLz4hcCompression
+				},
+				_ => {
+					info!("Using no RocksDB compression.");
+					DBCompressionType::DBNoCompression
+				},
+			}
+		},
+		_ => {
+			info!("Using no RocksDB compression.");
+			DBCompressionType::DBNoCompression
+		},
+	};
+
+	if let Ok(val) = ::std::env::var("LZ4_ACCELERATION") {
+		let acceleration: Option<i32> = val.parse().ok();
+
+		if let Some(acceleration) = acceleration {
+			info!("Using LZ4 acceleration: {}.", acceleration);
+			opts.set_compression_acceleration(acceleration);
+		}
+	}
+
+	opts.set_compression_type(compression_type);
 	opts.set_parsed_options("level_compaction_dynamic_level_bytes=true").map_err(other_io_err)?;
 
 	opts.set_block_based_table_factory(block_opts);
