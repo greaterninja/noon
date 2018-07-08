@@ -36,7 +36,8 @@ use std::path::Path;
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use rocksdb::{
 	DB, Writable, WriteBatch, WriteOptions, IteratorMode, DBIterator,
-	Options, BlockBasedOptions, Direction, Cache, Column, ReadOptions
+	Options, BlockBasedOptions, Direction, Cache, Column, ReadOptions,
+	DBCompressionType
 };
 use interleaved_ordered::{interleave_ordered, InterleaveOrdered};
 
@@ -240,6 +241,8 @@ fn col_config(config: &DatabaseConfig, block_opts: &BlockBasedOptions) -> io::Re
 	opts.set_target_file_size_base(config.compaction.initial_file_size);
 
 	opts.set_parsed_options("compression_per_level=").map_err(other_io_err)?;
+
+	opts.set_compression_type(DBCompressionType::DBLz4Compression);
 
 	Ok(opts)
 }
