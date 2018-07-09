@@ -219,6 +219,7 @@ pub fn migrate(path: &Path, compaction_profile: &DatabaseCompactionProfile) -> R
 				compaction: compaction_profile,
 				columns: db::NUM_COLUMNS,
 				wal: true,
+				bulk_mode: false,
 			};
 
 			migrate_blooms(&db_path, &db_config).map_err(Error::BloomsDB)?;

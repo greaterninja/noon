@@ -18,6 +18,15 @@
 
 #![warn(missing_docs)]
 
+// #![feature(alloc_system)]
+
+// extern crate alloc_system;
+
+// use alloc_system::System;
+
+// #[global_allocator]
+// static A: System = System;
+
 extern crate parity;
 
 extern crate ctrlc;

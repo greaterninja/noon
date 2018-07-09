@@ -165,6 +165,9 @@ pub trait KeyValueDB: Sync + Send {
 
 	/// Attempt to replace this database with a new one located at the given path.
 	fn restore(&self, new_db: &str) -> io::Result<()>;
+
+	/// Runs the DB compaction
+	fn run_compaction(&self);
 }
 
 /// Generic key-value database handler. This trait contains one function `open`. When called, it opens database with a

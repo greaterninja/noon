@@ -189,6 +189,7 @@ impl Restoration {
 			writer.finish(self.manifest)?;
 		}
 
+		self.db.key_value().run_compaction();
 		self.guard.disarm();
 		Ok(())
 	}

@@ -15,7 +15,7 @@ ethkey = { path = "../../ethkey" }
 ipnetwork = "0.12.6"
 rlp = { path = "../rlp" }
 libc = "0.2"
-snappy = { git = "https://github.com/paritytech/rust-snappy" }
+snappy = { git = "https://github.com/paritytech/rust-snappy", branch = "andre/use-cmake" }
 
 
 [dev-dependencies]

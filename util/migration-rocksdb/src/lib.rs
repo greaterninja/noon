@@ -253,6 +253,7 @@ impl Manager {
 			compaction: config.compaction_profile,
 			columns: columns,
 			wal: true,
+			bulk_mode: false,
 		};
 
 		let db_root = database_path(old_path);

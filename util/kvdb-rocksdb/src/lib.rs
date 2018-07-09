@@ -169,6 +169,8 @@ pub struct DatabaseConfig {
 	pub columns: Option<u32>,
 	/// Should we keep WAL enabled?
 	pub wal: bool,
+	/// Should the DB be opened in Bulk mode?
+	pub bulk_mode: bool,
 }
 
 impl DatabaseConfig {
@@ -197,6 +199,7 @@ impl Default for DatabaseConfig {
 			compaction: CompactionProfile::default(),
 			columns: None,
 			wal: true,
+			bulk_mode: false,
 		}
 	}
 }
@@ -240,6 +243,10 @@ fn col_config(config: &DatabaseConfig, block_opts: &BlockBasedOptions) -> io::Re
 	opts.set_target_file_size_base(config.compaction.initial_file_size);
 
 	opts.set_parsed_options("compression_per_level=").map_err(other_io_err)?;
+
+	if config.bulk_mode {
+		opts.prepare_for_bulk_load();
+	}
 
 	Ok(opts)
 }
@@ -592,6 +599,21 @@ impl Database {
 		}
 	}
 
+	pub fn run_compaction(&self) {
+		match *self.db.read() {
+			Some(DBAndColumns { ref db, ref cfs }) => {
+				info!("Running DB compaction...");
+				db.compact_range(None, None);
+
+				for cf in cfs {
+					db.compact_cf_range(*cf, None, None);
+				}
+				info!("Done running DB compaction!");
+			},
+			None => {},
+		}
+	}
+
 	/// Close the database
 	fn close(&self) {
 		*self.db.write() = None;
@@ -690,6 +712,10 @@ impl KeyValueDB for Database {
 
 	fn flush(&self) -> io::Result<()> {
 		Database::flush(self)
+	}
+
+	fn run_compaction(&self) {
+		Database::run_compaction(self);
 	}
 
 	fn iter<'a>(&'a self, col: Option<u32>) -> Box<Iterator<Item=(Box<[u8]>, Box<[u8]>)> + 'a> {

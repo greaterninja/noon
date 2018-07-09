@@ -76,7 +76,9 @@ pub fn restoration_db_handler(client_path: &Path, client_config: &ClientConfig) 
 
 	impl BlockChainDBHandler for RestorationDBHandler {
 		fn open(&self, db_path: &Path) -> io::Result<Arc<BlockChainDB>> {
-			open_database(&db_path.to_string_lossy(), &self.config)
+			let mut config = self.config.clone();
+			config.bulk_mode = true;
+			open_database(&db_path.to_string_lossy(), &config)
 		}
 	}
 
