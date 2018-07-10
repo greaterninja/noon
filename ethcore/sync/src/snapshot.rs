@@ -137,7 +137,8 @@ impl Snapshot {
 		};
 
 		// Get a random chunk
-		let chunk = thread_rng().choose(&needed_chunks);
+		// let chunk = thread_rng().choose(&needed_chunks);
+		let chunk = needed_chunks.iter().next();
 
 		if let Some(hash) = chunk {
 			self.downloading_chunks.insert(hash.clone());
