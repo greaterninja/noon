@@ -245,7 +245,7 @@ fn col_config(config: &DatabaseConfig, block_opts: &BlockBasedOptions) -> io::Re
 	opts.set_parsed_options("compression_per_level=").map_err(other_io_err)?;
 
 	if config.bulk_mode {
-		opts.prepare_for_bulk_load();
+		// opts.prepare_for_bulk_load();
 	}
 
 	Ok(opts)
@@ -413,10 +413,9 @@ impl Database {
 	}
 
 	/// Commit transaction to database.
-	pub fn write_buffered(&self, tr: DBTransaction) {
+	pub fn write_buffered(&self, mut tr: DBTransaction) {
 		let mut overlay = self.overlay.write();
-		let ops = tr.ops;
-		for op in ops {
+		for op in tr.ops.drain(..) {
 			match op {
 				DBOp::Insert { col, key, value } => {
 					let c = Self::to_overlay_column(col);
@@ -489,12 +488,11 @@ impl Database {
 	}
 
 	/// Commit transaction to database.
-	pub fn write(&self, tr: DBTransaction) -> io::Result<()> {
+	pub fn write(&self, mut tr: DBTransaction) -> io::Result<()> {
 		match *self.db.read() {
 			Some(DBAndColumns { ref db, ref cfs }) => {
 				let batch = WriteBatch::new();
-				let ops = tr.ops;
-				for op in ops {
+				for op in tr.ops.drain(..) {
 					// remove any buffered operation for this key
 					self.overlay.write()[Self::to_overlay_column(op.col())].remove(op.key());
 
@@ -603,11 +601,11 @@ impl Database {
 		match *self.db.read() {
 			Some(DBAndColumns { ref db, ref cfs }) => {
 				info!("Running DB compaction...");
-				db.compact_range(None, None);
+				// db.compact_range(None, None);
 
-				for cf in cfs {
-					db.compact_cf_range(*cf, None, None);
-				}
+				// for cf in cfs {
+				// 	db.compact_cf_range(*cf, None, None);
+				// }
 				info!("Done running DB compaction!");
 			},
 			None => {},

@@ -379,6 +379,9 @@ impl StateRebuilder {
 			}
 		}
 
+		// Flush the DB before allocating even more memory
+		backing.flush()?;
+
 		let bloom_journal = self.bloom.drain_journal();
 		let mut batch = backing.transaction();
 		StateDB::commit_bloom(&mut batch, bloom_journal)?;

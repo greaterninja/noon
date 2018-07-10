@@ -64,10 +64,9 @@ impl KeyValueDB for InMemory {
 		}
 	}
 
-	fn write_buffered(&self, transaction: DBTransaction) {
+	fn write_buffered(&self, mut transaction: DBTransaction) {
 		let mut columns = self.columns.write();
-		let ops = transaction.ops;
-		for op in ops {
+		for op in transaction.ops.drain(..) {
 			match op {
 				DBOp::Insert { col, key, value } => {
 					if let Some(col) = columns.get_mut(&col) {
