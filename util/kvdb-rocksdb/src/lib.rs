@@ -24,6 +24,7 @@ extern crate num_cpus;
 extern crate parking_lot;
 extern crate regex;
 extern crate rocksdb;
+extern crate heapsize;
 
 extern crate ethereum_types;
 extern crate kvdb;
@@ -32,6 +33,7 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::{cmp, fs, io, mem, result, error};
 use std::path::Path;
+use heapsize::HeapSizeOf;
 
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use rocksdb::{
@@ -62,6 +64,15 @@ const DB_DEFAULT_MEMORY_BUDGET_MB: usize = 128;
 enum KeyState {
 	Insert(DBValue),
 	Delete,
+}
+
+impl HeapSizeOf for KeyState {
+	fn heap_size_of_children(&self) -> usize {
+		match self {
+			KeyState::Delete => 1,
+			KeyState::Insert(value) => value.heap_size_of_children() + 1,
+		}
+	}
 }
 
 /// Compaction profile for the database settings
@@ -426,7 +437,15 @@ impl Database {
 					overlay[c].insert(key, KeyState::Delete);
 				},
 			}
+
+			// if size > 1024 * 1024 * 50 {
+			// }
 		};
+
+		let size = (*overlay).heap_size_of_children();
+		if size >= 50 * 1024 * 1024 {
+			info!("DB overlay size is growing! Now: {} MB", size / 1024 / 1024);
+		}
 	}
 
 	/// Commit buffered changes to database. Must be called under `flush_lock`
