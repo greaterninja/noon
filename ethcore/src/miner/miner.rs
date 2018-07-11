@@ -16,7 +16,7 @@
 
 use std::cmp;
 use std::time::{Instant, Duration};
-use std::collections::{BTreeMap, BTreeSet, HashSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 
 use ansi_term::Colour;
@@ -47,7 +47,7 @@ use client::BlockId;
 use executive::contract_address;
 use header::{Header, BlockNumber};
 use miner;
-use miner::pool_client::{PoolClient, CachedNonceClient};
+use miner::pool_client::{PoolClient, CachedNonceClient, NonceCache};
 use receipt::{Receipt, RichReceipt};
 use spec::Spec;
 use state::State;
@@ -202,7 +202,7 @@ pub struct Miner {
 	sealing: Mutex<SealingWork>,
 	params: RwLock<AuthoringParams>,
 	listeners: RwLock<Vec<Box<NotifyWork>>>,
-	nonce_cache: (RwLock<HashMap<Address, U256>>, usize),
+	nonce_cache: NonceCache,
 	gas_pricer: Mutex<GasPricer>,
 	options: MinerOptions,
 	// TODO [ToDr] Arc is only required because of price updater
@@ -242,7 +242,7 @@ impl Miner {
 			params: RwLock::new(AuthoringParams::default()),
 			listeners: RwLock::new(vec![]),
 			gas_pricer: Mutex::new(gas_pricer),
-			nonce_cache: (RwLock::new(HashMap::with_capacity(nonce_cache_size / 2)), nonce_cache_size),
+			nonce_cache: NonceCache::new(nonce_cache_size),
 			options,
 			transaction_queue: Arc::new(TransactionQueue::new(limits, verifier_options, tx_queue_strategy)),
 			accounts,
@@ -850,13 +850,13 @@ impl miner::MinerService for Miner {
 		self.transaction_queue.all_transactions()
 	}
 
-	fn pending_transactions_hashes<C>(&self, chain: &C) -> BTreeSet<H256> where
+	fn pending_transaction_hashes<C>(&self, chain: &C) -> BTreeSet<H256> where
 		C: ChainInfo + Sync,
 	{
 		let chain_info = chain.chain_info();
 
 		let from_queue = || self.transaction_queue.pending_hashes(
-			|sender| self.nonce_cache.0.read().get(sender).cloned(),
+			|sender| self.nonce_cache.get(sender),
 		);
 
 		let from_pending = || {
@@ -1099,7 +1099,7 @@ impl miner::MinerService for Miner {
 
 		if has_new_best_block {
 			// Clear nonce cache
-			self.nonce_cache.0.write().clear();
+			self.nonce_cache.clear();
 		}
 
 		// First update gas limit in transaction queue and minimal gas price.

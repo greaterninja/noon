@@ -176,7 +176,7 @@ impl Default for ClientConfig {
 }
 #[cfg(test)]
 mod test {
-	use super::{DatabaseCompactionProfile, Mode};
+	use super::{DatabaseCompactionProfile};
 
 	#[test]
 	fn test_default_compaction_profile() {
@@ -188,10 +188,5 @@ mod test {
 		assert_eq!(DatabaseCompactionProfile::Auto, "auto".parse().unwrap());
 		assert_eq!(DatabaseCompactionProfile::SSD, "ssd".parse().unwrap());
 		assert_eq!(DatabaseCompactionProfile::HDD, "hdd".parse().unwrap());
-	}
-
-	#[test]
-	fn test_mode_default() {
-		assert_eq!(Mode::default(), Mode::Active);
 	}
 }

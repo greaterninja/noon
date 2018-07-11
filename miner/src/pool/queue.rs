@@ -156,7 +156,7 @@ impl RecentlyRejected {
 	fn new(limit: usize) -> Self {
 		RecentlyRejected {
 			limit,
-			inner: Default::default(),
+			inner: RwLock::new(HashMap::with_capacity(MIN_REJECTED_CACHE_SIZE)),
 		}
 	}
 
@@ -251,12 +251,14 @@ impl TransactionQueue {
 				None
 			}
 		};
+
 		let verifier = verifier::Verifier::new(
 			client,
 			options,
 			self.insertion_id.clone(),
 			transaction_to_replace,
 		);
+
 		let results = transactions
 			.into_iter()
 			.map(|transaction| {
@@ -267,7 +269,7 @@ impl TransactionQueue {
 				}
 
 				if let Some(err) = self.recently_rejected.get(&hash) {
-					trace!(target: "txpool", "[{:?}] Rejecting recently rejected: {:?}", hash, err);
+					trace!(target: "txqueue", "[{:?}] Rejecting recently rejected: {:?}", hash, err);
 					return Err(err);
 				}
 
@@ -300,7 +302,7 @@ impl TransactionQueue {
 	/// Returns all transactions in the queue without explicit ordering.
 	pub fn all_transactions(&self) -> Vec<Arc<pool::VerifiedTransaction>> {
 		let ready = |_tx: &pool::VerifiedTransaction| txpool::Readiness::Ready;
-		self.pool.read().unordered_pending(ready).collect()
+		self.pool.read().unordered_pending(ready).map(|tx| tx.transaction).collect()
 	}
 
 	/// Computes unordered set of pending hashes.
@@ -343,7 +345,7 @@ impl TransactionQueue {
 		// just return the unordered set.
 		if let PendingOrdering::Unordered = ordering {
 			let ready = Self::ready(client, block_number, current_timestamp, nonce_cap);
-			return self.pool.read().unordered_pending(ready).take(max_len).collect();
+			return self.pool.read().unordered_pending(ready).take(max_len).map(|tx| tx.transaction).collect();
 		}
 
 		let pending: Vec<_> = self.collect_pending(client, block_number, current_timestamp, nonce_cap, |i| {
@@ -418,17 +420,19 @@ impl TransactionQueue {
 		// We want to clear stale transactions from the queue as well.
 		// (Transactions that are occuping the queue for a long time without being included)
 		let stale_id = {
-			let current_id = self.insertion_id.load(atomic::Ordering::Relaxed) as u64;
+			let current_id = self.insertion_id.load(atomic::Ordering::Relaxed);
 			// wait at least for half of the queue to be replaced
 			let gap = self.pool.read().options().max_count / 2;
 			// but never less than 100 transactions
-			let gap = cmp::max(100, gap) as u64;
+			let gap = cmp::max(100, gap);
 
 			current_id.checked_sub(gap)
 		};
 
+		self.recently_rejected.clear();
+
 		let mut removed = 0;
-		let senders: Vec<Address> = {
+		let senders: Vec<_> = {
 			let pool = self.pool.read();
 			let senders = pool.senders().cloned().collect();
 			senders
@@ -438,7 +442,6 @@ impl TransactionQueue {
 			let state_readiness = ready::State::new(client.clone(), stale_id, nonce_cap);
 			removed += self.pool.write().cull(Some(chunk), state_readiness);
 		}
-		self.recently_rejected.clear();
 		debug!(target: "txqueue", "Removed {} stalled transactions. {}", removed, self.status());
 	}
 
