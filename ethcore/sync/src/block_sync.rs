@@ -67,6 +67,7 @@ pub enum BlockRequest {
 }
 
 /// Indicates sync action
+#[derive(Debug, PartialEq)]
 pub enum DownloadAction {
 	/// Do nothing
 	None,
@@ -115,14 +116,14 @@ pub struct BlockDownloader {
 impl BlockDownloader {
 	/// Create a new instance of syncing strategy. This won't reorganize to before the
 	/// last kept state.
-	pub fn new(sync_receipts: bool, start_hash: &H256, start_number: BlockNumber) -> Self {
+	pub fn new(sync_receipts: bool, start_hash: H256, start_number: BlockNumber) -> Self {
 		BlockDownloader {
 			state: State::Idle,
 			highest_block: None,
 			last_imported_block: start_number,
-			last_imported_hash: start_hash.clone(),
+			last_imported_hash: start_hash,
 			last_round_start: start_number,
-			last_round_start_hash: start_hash.clone(),
+			last_round_start_hash: start_hash,
 			blocks: BlockCollection::new(sync_receipts),
 			imported_this_round: None,
 			round_parents: VecDeque::new(),
@@ -226,6 +227,7 @@ impl BlockDownloader {
 			return Err(BlockDownloaderImportError::Invalid);
 		}
 
+		trace!(target: "sync", "dupa");
 		let mut headers = Vec::new();
 		let mut hashes = Vec::new();
 		let mut valid_response = item_count == 0; //empty response is valid
@@ -316,7 +318,7 @@ impl BlockDownloader {
 	}
 
 	/// Called by peer once it has new block bodies
-	pub fn import_bodies(&mut self, _io: &mut SyncIo, r: &Rlp) -> Result<(), BlockDownloaderImportError> {
+	pub fn import_bodies(&mut self, r: &Rlp) -> Result<(), BlockDownloaderImportError> {
 		let item_count = r.item_count().unwrap_or(0);
 		if item_count == 0 {
 			return Err(BlockDownloaderImportError::Useless);
@@ -558,4 +560,118 @@ impl BlockDownloader {
 	}
 }
 
-//TODO: module tests
+#[cfg(test)]
+mod tests {
+	use ethcore::client::{TestBlockChainClient, ImportBlock};
+	use tests::snapshot::TestSnapshotService;
+	use tests::helpers::TestIo;
+	use parking_lot::RwLock;
+
+	use hash::keccak;
+	use rlp::{RlpStream, Rlp, encode_list};
+	use ethcore::generator::{BlockBuilder, BlockOptions};
+	use ethcore::header::Header;
+	use super::{BlockDownloader, DownloadAction};
+
+	#[test]
+	fn test_block_downloader_import_valid_blocks() {
+		::env_logger::init().ok();
+
+		// build blocks
+		let genesis = BlockBuilder::genesis();
+		let first = genesis.add_block_with(|| BlockOptions {
+			uncles: vec![Header::default()],
+			..Default::default()
+		});
+
+		// prepare io
+		let mut client = TestBlockChainClient::new();
+		client.import_block(genesis.last().encoded()).unwrap();
+		let ss = TestSnapshotService::new();
+		let queue = RwLock::default();
+		let mut io = TestIo::new(&mut client, &ss, &queue, None);
+
+		// import_headers expects rlp array of rlp headers
+		let encoded_headers = encode_list(&[first.last().header()]);
+		let headers_rlp = Rlp::new(&encoded_headers);
+		let header_hash = first.last().header().hash();
+
+		// import_bodies expects rlp array of rlp arrays that contain two elements
+		// transactions and uncles
+		let encoded_bodies = {
+			let mut stream = RlpStream::new_list(2);
+			stream.append_list(&first.last().transactions);
+			stream.append_list(&first.last().uncles);
+			let out = stream.out();
+
+			let mut outter_stream = RlpStream::new_list(1);
+			outter_stream.append_raw(&out, 1);
+			outter_stream.out()
+		};
+		let bodies_rlp = Rlp::new(&encoded_bodies);
+
+		let mut downloader = BlockDownloader::new(false, genesis.last().hash(), 0);
+		downloader.reset_to(vec![header_hash]);
+		let result = downloader.import_headers(&mut io, &headers_rlp, Some(header_hash));
+		assert_eq!(result, Ok(DownloadAction::None));
+		let result2 = downloader.import_bodies(&bodies_rlp);
+		assert!(result2.is_ok());
+		let result3 = downloader.collect_blocks(&mut io, false);
+		assert_eq!(result3, Ok(()));
+	}
+
+	#[test]
+	fn test_block_downloader_import_invalid_block() {
+		::env_logger::init().ok();
+
+		// build blocks
+		let genesis = BlockBuilder::genesis();
+		let first = genesis.add_blocks(1);
+
+		// prepare io
+		let mut client = TestBlockChainClient::new();
+		client.import_block(genesis.last().encoded()).unwrap();
+		let ss = TestSnapshotService::new();
+		let queue = RwLock::default();
+		let mut io = TestIo::new(&mut client, &ss, &queue, None);
+
+		// let's modify a block uncle rlp slightly, so it's invalid
+		let mut block = first.last().clone();
+		let dummy_uncle = vec![0x40];
+		let encoded_uncles_rlp = {
+			let mut stream = RlpStream::new_list(1);
+			stream.append_raw(&dummy_uncle, 1);
+			stream.out()
+		};
+		block.header.set_uncles_hash(keccak(&encoded_uncles_rlp));
+		let header_hash = block.header.hash();
+
+		// import bodies expects rlp array of rlp arrays that contain two elements
+		// transactions and uncles
+		let encoded_headers = encode_list(&[block.header]);
+		let headers_rlp = Rlp::new(&encoded_headers);
+
+		// import_bodies expects rlp array of rlp arrays that contain two elements
+		// transactions and uncles
+		let encoded_bodies = {
+			let mut stream = RlpStream::new_list(2);
+			stream.append_list(&block.transactions);
+			stream.append_raw(&encoded_uncles_rlp, 1);
+			let out = stream.out();
+
+			let mut outter_stream = RlpStream::new_list(1);
+			outter_stream.append_raw(&out, 1);
+			outter_stream.out()
+		};
+		let bodies_rlp = Rlp::new(&encoded_bodies);
+
+		let mut downloader = BlockDownloader::new(false, genesis.last().hash(), 0);
+		downloader.reset_to(vec![header_hash]);
+		let result = downloader.import_headers(&mut io, &headers_rlp, Some(header_hash));
+		assert_eq!(result, Ok(DownloadAction::None));
+		let result2 = downloader.import_bodies(&bodies_rlp);
+		assert_eq!(result2, Ok(()));
+		let result3 = downloader.collect_blocks(&mut io, false);
+		assert!(result3.is_err());
+	}
+}

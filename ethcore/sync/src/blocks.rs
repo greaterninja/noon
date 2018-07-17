@@ -55,7 +55,7 @@ impl HeapSizeOf for SyncBlock {
 }
 
 /// Used to identify header by transactions and uncles hashes
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 struct HeaderId {
 	transactions_root: H256,
 	uncles: H256
@@ -350,9 +350,9 @@ impl BlockCollection {
 			}
 		};
 
-		match self.header_ids.get(&header_id).cloned() {
+		trace!(target: "sync", "header_ids before: {:?}", self.header_ids);
+		match self.header_ids.remove(&header_id) {
 			Some(h) => {
-				self.header_ids.remove(&header_id);
 				self.downloading_bodies.remove(&h);
 				match self.blocks.get_mut(&h) {
 					Some(ref mut block) => {

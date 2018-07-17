@@ -25,7 +25,6 @@ mod extras;
 mod import_route;
 mod update;
 
-#[cfg(test)]
 pub mod generator;
 
 pub use self::blockchain::{BlockProvider, BlockChain, BlockChainDB, BlockChainDBHandler};

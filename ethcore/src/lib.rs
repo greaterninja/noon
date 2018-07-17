@@ -184,4 +184,4 @@ pub mod test_helpers;
 pub use types::*;
 pub use executive::contract_address;
 pub use evm::CreateContractAddress;
-pub use blockchain::{BlockChainDB, BlockChainDBHandler};
+pub use blockchain::{BlockChainDB, BlockChainDBHandler, generator};

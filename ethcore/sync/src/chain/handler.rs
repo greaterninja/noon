@@ -309,7 +309,7 @@ impl SyncHandler {
 						Some(ref mut blocks) => blocks,
 					}
 				};
-				downloader.import_bodies(io, r)
+				downloader.import_bodies(r)
 			};
 
 			match result {

@@ -20,8 +20,9 @@ use std::collections::VecDeque;
 use ethereum_types::{U256, H256, Bloom};
 
 use bytes::Bytes;
+use hash::keccak;
 use header::Header;
-use rlp::encode;
+use rlp::{encode, encode_list};
 use transaction::SignedTransaction;
 use views::BlockView;
 
@@ -65,6 +66,7 @@ pub struct BlockOptions {
 	pub difficulty: U256,
 	pub bloom: Bloom,
 	pub transactions: Vec<SignedTransaction>,
+	pub uncles: Vec<Header>,
 }
 
 impl Default for BlockOptions {
@@ -73,6 +75,7 @@ impl Default for BlockOptions {
 			difficulty: 10.into(),
 			bloom: Bloom::default(),
 			transactions: Vec::new(),
+			uncles: Vec::new(),
 		}
 	}
 }
@@ -147,6 +150,8 @@ impl BlockBuilder {
 			block.header.set_number(block_number);
 			block.header.set_log_bloom(metadata.bloom);
 			block.header.set_difficulty(metadata.difficulty);
+			block.header.set_uncles_hash(keccak(&encode_list(&metadata.uncles)));
+			block.uncles = metadata.uncles;
 			block.transactions = metadata.transactions;
 
 			parent_hash = block.hash();
