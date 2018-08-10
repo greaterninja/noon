@@ -365,8 +365,11 @@ impl SyncHandler {
 				trace!(target: "sync", "Inserting (fork) block {} header", fork_number);
 				io.chain_overlay().write().insert(fork_number, header.to_vec());
 			}
+			trace!(target: "sync", "{}: Confirmed peer::after overlay", peer_id);
 		}
+		trace!(target: "sync", "{}: on_peer_confirmed", peer_id);
 		SyncHandler::on_peer_confirmed(sync, io, peer_id);
+		trace!(target: "sync", "{}: on_peer_confirmed::done", peer_id);
 		return Ok(());
 	}
 

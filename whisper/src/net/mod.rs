@@ -693,8 +693,9 @@ impl<T: MessageHandler> ::network::NetworkProtocolHandler for Network<T> {
 		*self.node_key.write() = host_info.id().clone();
 	}
 
-	fn read(&self, io: &NetworkContext, peer: &PeerId, packet_id: u8, data: &[u8]) {
-		self.on_packet(io, peer, packet_id, data)
+	fn read(&self, io: &NetworkContext, peer: &PeerId, packet_id: u8, data: &[u8]) -> Result<(), ()> {
+		self.on_packet(io, peer, packet_id, data);
+		Ok(())
 	}
 
 	fn connected(&self, io: &NetworkContext, peer: &PeerId) {
@@ -722,7 +723,9 @@ pub struct ParityExtensions;
 impl ::network::NetworkProtocolHandler for ParityExtensions {
 	fn initialize(&self, _io: &NetworkContext, _host_info: &HostInfo) { }
 
-	fn read(&self, _io: &NetworkContext, _peer: &PeerId, _id: u8, _msg: &[u8]) { }
+	fn read(&self, _io: &NetworkContext, _peer: &PeerId, _id: u8, _msg: &[u8]) -> Result<(), ()> {
+		Ok(())
+	}
 
 	fn connected(&self, _io: &NetworkContext, _peer: &PeerId) { }
 

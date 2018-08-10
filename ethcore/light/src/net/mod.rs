@@ -1093,8 +1093,9 @@ impl NetworkProtocolHandler for LightProtocol {
 			.expect("Error registering request timer interval token.");
 	}
 
-	fn read(&self, io: &NetworkContext, peer: &PeerId, packet_id: u8, data: &[u8]) {
+	fn read(&self, io: &NetworkContext, peer: &PeerId, packet_id: u8, data: &[u8]) -> Result<(), ()> {
 		self.handle_packet(&io, peer, packet_id, data);
+		Ok(())
 	}
 
 	fn connected(&self, io: &NetworkContext, peer: &PeerId) {

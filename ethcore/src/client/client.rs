@@ -2031,6 +2031,7 @@ impl IoClient for Client {
 	}
 
 	fn queue_ancient_block(&self, block_bytes: Bytes, receipts_bytes: Bytes) -> Result<H256, BlockImportError> {
+		trace_time!("import_queue_old_block");
 		let header: Header = ::rlp::Rlp::new(&block_bytes).val_at(0)?;
 		let hash = header.hash();
 
@@ -2052,6 +2053,7 @@ impl IoClient for Client {
 
 		trace!(target: "client", "Queuing old block #{}", header.number());
 		match self.queue_ancient_blocks.queue(&mut self.io_channel.lock(), move |client| {
+			trace_time!("import_old_blocks");
 			let result = client.importer.import_old_block(
 				&header,
 				&block_bytes,

@@ -42,7 +42,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use ipnetwork::{IpNetwork, IpNetworkError};
 use ethkey::Secret;
-use ethereum_types::{H256, H512};
+use ethereum_types::H512;
 use rlp::{Decodable, DecoderError, Rlp};
 
 /// Protocol handler level packet id
@@ -341,7 +341,9 @@ pub trait NetworkProtocolHandler: Sync + Send {
 	/// Initialize the handler
 	fn initialize(&self, _io: &NetworkContext, _host_info: &HostInfo) {}
 	/// Called when new network packet received.
-	fn read(&self, io: &NetworkContext, peer: &PeerId, packet_id: u8, data: &[u8]);
+	///
+	/// Returning `Err` will cause the packet to be re-tried in the future.
+	fn read(&self, io: &NetworkContext, peer: &PeerId, packet_id: u8, data: &[u8]) -> Result<(), ()>;
 	/// Called when new peer is connected. Only called when peer supports the same protocol.
 	fn connected(&self, io: &NetworkContext, peer: &PeerId);
 	/// Called when a previously connected peer disconnects.

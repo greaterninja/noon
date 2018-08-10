@@ -61,6 +61,7 @@ const DISCOVERY: StreamToken = SYS_TIMER + 3;
 const DISCOVERY_REFRESH: TimerToken = SYS_TIMER + 4;
 const DISCOVERY_ROUND: TimerToken = SYS_TIMER + 5;
 const NODE_TABLE: TimerToken = SYS_TIMER + 6;
+const RETRY: TimerToken = SYS_TIMER + 7;
 const FIRST_SESSION: StreamToken = 0;
 const LAST_SESSION: StreamToken = FIRST_SESSION + MAX_SESSIONS - 1;
 const USER_TIMER: TimerToken = LAST_SESSION + 256;
@@ -75,6 +76,8 @@ const DISCOVERY_REFRESH_TIMEOUT: Duration = Duration::from_secs(60);
 const DISCOVERY_ROUND_TIMEOUT: Duration = Duration::from_millis(300);
 // for NODE_TABLE TimerToken
 const NODE_TABLE_TIMEOUT: Duration = Duration::from_secs(300);
+// for RETRY TimerToken
+const RETRY_TIMEOUT: Duration = Duration::from_millis(300);
 
 #[derive(Debug, PartialEq, Eq)]
 /// Protocol info
@@ -252,6 +255,9 @@ pub struct Host {
 	reserved_nodes: RwLock<HashSet<NodeId>>,
 	stopping: AtomicBool,
 	filter: Option<Arc<ConnectionFilter>>,
+	read_handlers_to_retry: Mutex<Vec<
+		(Arc<NetworkProtocolHandler + Sync>, u8, Vec<u8>, usize)
+	>>,
 }
 
 impl Host {
@@ -307,6 +313,7 @@ impl Host {
 			reserved_nodes: RwLock::new(HashSet::new()),
 			stopping: AtomicBool::new(false),
 			filter: filter,
+			read_handlers_to_retry: Default::default(),
 		};
 
 		for n in boot_nodes {
@@ -810,12 +817,24 @@ impl Host {
 				}
 			}
 
+			let mut retry_later = Vec::new();
 			for (p, packet_id, data) in packet_data {
 				let reserved = self.reserved_nodes.read();
 				if let Some(h) = handlers.get(&p).clone() {
-					h.read(&NetworkContext::new(io, p, Some(session.clone()), self.sessions.clone(), &reserved), &token, packet_id, &data);
+					let retry = h.read(
+						&NetworkContext::new(io, p, Some(session.clone()), self.sessions.clone(), &reserved),
+						&token,
+						packet_id,
+						&data
+					).is_err();
+
+					if retry {
+						retry_later.push((h.clone(), packet_id, data, token));
+					}
 				}
 			}
+
+			self.read_handlers_to_retry.lock().extend(retry_later);
 		}
 	}
 
@@ -883,6 +902,10 @@ impl Host {
 		self.nodes.write().update(node_changes, &*self.reserved_nodes.read());
 	}
 
+	fn retry_read_timers(&self, io: &IoContext<NetworkIoMessage>) {
+
+	}
+
 	pub fn with_context<F>(&self, protocol: ProtocolId, io: &IoContext<NetworkIoMessage>, action: F) where F: FnOnce(&NetworkContextTrait) {
 		let reserved = { self.reserved_nodes.read() };
 
@@ -902,6 +925,7 @@ impl IoHandler<NetworkIoMessage> for Host {
 	/// Initialize networking
 	fn initialize(&self, io: &IoContext<NetworkIoMessage>) {
 		io.register_timer(IDLE, MAINTENANCE_TIMEOUT).expect("Error registering Network idle timer");
+		io.register_timer(RETRY, RETRY_TIMEOUT).expect("Error registering Network retry timer");
 		io.message(NetworkIoMessage::InitPublicInterface).unwrap_or_else(|e| warn!("Error sending IO notification: {:?}", e));
 		self.maintain_network(io)
 	}
@@ -950,6 +974,7 @@ impl IoHandler<NetworkIoMessage> for Host {
 		}
 		match token {
 			IDLE => self.maintain_network(io),
+			RETRY => self.retry_read_timers(io),
 			FIRST_SESSION ... LAST_SESSION => self.connection_timeout(token, io),
 			DISCOVERY_REFRESH => {
 				self.discovery.lock().as_mut().map(|d| d.refresh());
