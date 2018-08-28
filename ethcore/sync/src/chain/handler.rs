@@ -401,7 +401,7 @@ impl SyncHandler {
 
 		if let DownloadAction::Reset = result {
 			// mark all outstanding requests as expired
-			trace!("Resetting downloads for {:?}", block_set);
+			trace!(target: "sync", "Resetting downloads for {:?}", block_set);
 			for (_, ref mut p) in sync.peers.iter_mut().filter(|&(_, ref p)| p.block_set == Some(block_set)) {
 				p.reset_asking();
 			}

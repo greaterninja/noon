@@ -423,7 +423,7 @@ impl ChainSync {
 			peers: HashMap::new(),
 			handshaking_peers: HashMap::new(),
 			active_peers: HashSet::new(),
-			new_blocks: BlockDownloader::new(false, &chain_info.best_block_hash, chain_info.best_block_number),
+			new_blocks: BlockDownloader::new(false, &chain_info.best_block_hash, chain_info.best_block_number, false),
 			old_blocks: None,
 			last_sent_block_number: 0,
 			network_id: config.network_id,
@@ -631,13 +631,13 @@ impl ChainSync {
 	pub fn update_targets(&mut self, chain: &BlockChainClient) {
 		// Do not assume that the block queue/chain still has our last_imported_block
 		let chain = chain.chain_info();
-		self.new_blocks = BlockDownloader::new(false, &chain.best_block_hash, chain.best_block_number);
+		self.new_blocks = BlockDownloader::new(false, &chain.best_block_hash, chain.best_block_number, false);
 		self.old_blocks = None;
 		if self.download_old_blocks {
 			if let (Some(ancient_block_hash), Some(ancient_block_number)) = (chain.ancient_block_hash, chain.ancient_block_number) {
 
 				trace!(target: "sync", "Downloading old blocks from {:?} (#{}) till {:?} (#{:?})", ancient_block_hash, ancient_block_number, chain.first_block_hash, chain.first_block_number);
-				let mut downloader = BlockDownloader::with_unlimited_reorg(true, &ancient_block_hash, ancient_block_number);
+				let mut downloader = BlockDownloader::with_unlimited_reorg(true, &ancient_block_hash, ancient_block_number, true);
 				if let Some(hash) = chain.first_block_hash {
 					trace!(target: "sync", "Downloader target set to {:?}", hash);
 					downloader.set_target(&hash);
@@ -763,6 +763,13 @@ impl ChainSync {
 
 					if force || last_imported_old_block_difficulty.map_or(true, |ld| peer_difficulty.map_or(true, |pd| pd > ld)) {
 						if let Some(request) = self.old_blocks.as_mut().and_then(|d| d.request_blocks(io, num_active_peers)) {
+							let last_imported_old_block_number = self.old_blocks.as_mut().map(|d| d.last_imported_block_number()).unwrap_or(0);
+							trace!(target: "sync", "Requesting old_blocks: {:?}, from peer: {} (diff: {:?}), last_imported_block_number: {}, last_imported_old_block_difficulty: {:?}",
+								   request,
+								   peer_id,
+								   peer_difficulty,
+								   last_imported_old_block_number,
+								   last_imported_old_block_difficulty);
 							SyncRequester::request_blocks(self, io, peer_id, request, BlockSet::OldBlocks);
 							return;
 						}

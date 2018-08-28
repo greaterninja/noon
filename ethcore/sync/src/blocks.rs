@@ -152,7 +152,7 @@ pub struct BlockCollection {
 	/// Downloaded blocks.
 	blocks: HashMap<H256, SyncBlock>,
 	/// Downloaded blocks by parent.
-	parents: HashMap<H256, H256>,
+	parents: HashMap<H256, H256>, // i.e. allows getting descendent
 	/// Used to map body to header.
 	header_ids: HashMap<HeaderId, H256>,
 	/// Used to map receipts root to headers.
@@ -385,7 +385,7 @@ impl BlockCollection {
 			}
 		}
 
-		trace!(target: "sync", "Drained {} blocks, new head :{:?}", drained.len(), self.head);
+		trace!(target: "sync", "Drained {} blocks, new head: {:?}, block number: {:?}", drained.len(), self.head, drained.last().map(|b| b.block.header.number()));
 		drained
 	}
 
