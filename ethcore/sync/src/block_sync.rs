@@ -556,7 +556,7 @@ impl BlockDownloader {
 
 		if self.blocks.is_empty() {
 			// complete sync round
-			trace!(target: "sync", "Sync round complete");
+			trace_if!(self, target: "sync", "Sync round complete");
 			self.reset();
 			return Ok(());
 		}
@@ -567,7 +567,7 @@ impl BlockDownloader {
 
 		if reset {
 			// there was an error importing one of the blocks so we reset the sync to the last successful imported hash
-			trace!(target: "sync", "Resetting sync round to: {}", self.last_imported_hash);
+			trace_if!(self, target: "sync", "Resetting sync round to: {}", self.last_imported_hash);
 			let hashes = vec![self.last_imported_hash];
 			self.reset_to(hashes);
 		}
