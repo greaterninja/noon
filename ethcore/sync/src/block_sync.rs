@@ -63,6 +63,8 @@ pub enum State {
 	Blocks,
 	/// Download is complete
 	Complete,
+	// Downloading is paused
+	Waiting,
 }
 
 /// Data that needs to be requested from a peer.
@@ -229,6 +231,14 @@ impl BlockDownloader {
 		self.state = State::Blocks;
 	}
 
+	/// Allow downloads to continue if currently paused
+	pub fn resume_if_paused(&mut self) {
+		if self.state == State::Waiting {
+			trace!(target: "sync", "Resuming block sync after pause");
+			self.state = State::Idle;
+		}
+	}
+
 	/// Returns used heap memory size.
 	pub fn heap_size(&self) -> usize {
 		self.blocks.heap_size() + self.round_parents.heap_size_of_children()
@@ -242,8 +252,8 @@ impl BlockDownloader {
 	/// Add new block headers.
 	pub fn import_headers(&mut self, io: &mut SyncIo, r: &Rlp, expected_hash: Option<H256>) -> Result<DownloadAction, BlockDownloaderImportError> {
 		let item_count = r.item_count().unwrap_or(0);
-		if self.state == State::Idle {
-			trace_if!(self, target: "sync", "Ignored unexpected block headers");
+		if self.state == State::Idle || self.state == State::Waiting {
+			trace_if!(self, target: "sync", "Ignored unexpected block headers, state = {:?}", self.state);
 			return Ok(DownloadAction::None)
 		}
 		if item_count == 0 && (self.state == State::Blocks) {
@@ -319,7 +329,7 @@ impl BlockDownloader {
 			},
 			State::Blocks => {
 				let count = headers.len();
-				// At least one of the heades must advance the subchain. Otherwise they are all useless.
+				// At least one of the headers must advance the subchain. Otherwise they are all useless.
 				if count == 0 || !any_known {
 					trace_if!(self, target: "sync", "No useful headers");
 					return Err(BlockDownloaderImportError::Useless);
@@ -477,6 +487,9 @@ impl BlockDownloader {
 					});
 				}
 			},
+			State::Waiting => {
+				return None
+			},
 			State::Complete => (),
 		}
 		None
@@ -486,6 +499,7 @@ impl BlockDownloader {
 	pub fn collect_blocks(&mut self, io: &mut SyncIo, allow_out_of_order: bool) -> Result<(), BlockDownloaderImportError> {
 		let mut bad = false;
 		let mut reset = false;
+		let mut pause = false;
 		let mut imported = HashSet::new();
 		let blocks = self.blocks.drain();
 		let count = blocks.len();
@@ -529,7 +543,7 @@ impl BlockDownloader {
 					break;
 				},
 				Err(BlockImportError(BlockImportErrorKind::Block(BlockError::UnknownParent(_)), _)) => {
-					trace_if!(self, target: "sync", "Unknown new block parent, restarting sync");
+					trace_if!(self, target: "sync", "Unknown new block parent {:?}, h: {:?} restarting sync", parent, h);
 					reset = true;
 					break;
 				},
@@ -541,6 +555,7 @@ impl BlockDownloader {
 				Err(BlockImportError(BlockImportErrorKind::Queue(QueueErrorKind::Full(limit)), _)) => {
 					debug_if!(self, target: "sync", "Block import queue full ({}), restarting sync", limit);
 					reset = true;
+					pause = true;
 					break;
 				},
 				Err(e) => {
@@ -571,6 +586,11 @@ impl BlockDownloader {
 			let hashes = vec![self.last_imported_hash];
 			self.reset();
 			self.blocks.reset_to(hashes);
+		}
+
+		if pause {
+			trace_if!(self, target: "sync", "Pausing sync round");
+			self.state = State::Waiting;
 		}
 
 		Ok(())

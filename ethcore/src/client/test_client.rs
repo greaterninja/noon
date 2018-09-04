@@ -875,6 +875,10 @@ impl IoClient for TestBlockChainClient {
 		self.import_block(unverified)
 	}
 
+	fn ancient_block_queue_empty(&self) -> bool {
+		false
+	}
+
 	fn queue_consensus_message(&self, message: Bytes) {
 		self.spec.engine.handle_message(&message).unwrap();
 	}

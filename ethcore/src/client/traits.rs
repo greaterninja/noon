@@ -207,6 +207,8 @@ pub trait IoClient: Sync + Send {
 	/// Queue block import with transaction receipts. Does no sealing and transaction validation.
 	fn queue_ancient_block(&self, block_bytes: Unverified, receipts_bytes: Bytes) -> Result<H256, BlockImportError>;
 
+	fn ancient_block_queue_empty(&self) -> bool;
+
 	/// Queue conensus engine message.
 	fn queue_consensus_message(&self, message: Bytes);
 }

@@ -1,0 +1,46 @@
+0x01eadd7317cef9adc2a765d2fd140865ede4dcc692affb2ddcfa78aaf02b7a5e: Sync round reset to #2347973
+Last imported block: #2350672, 0x0aa8c60e427bb1af933b3c7f2e5a7a577f313e384a4acd74e49223942a08bd15
+28 17:40:40 - last call of start_sync_round
+0xd1e56a319ebc5c65eccac4fa9f5671ce5537eb649edb8521580a27dcdf99c703: another bad block
+
+How does the sync round normally reset?
+
+Problem: gets stuck in block_sync::request_blocks state = State::Blocks
+
+The original bug was in fact not caused (directly?) via the 'queue full' causing a restart as originally thought. In fact it retracted again, with only a single peer returning no blocks.
+
+So there are two cases causing a retraction: before and after my fix
+
+Ok so with the latest fixes the problem is that we get stuck on some invalid block
+
+Idea: what if we delayed the retraction so that it doesn't shoot back too quickly
+
+Idea: problem caused by async import meaning old block rounds are going too fast
+
+Gets stuck because of blocks_isempty after reset_to
+
+Should find an alternative solution to andres fix - delay somehow
+
+15:46: Running POA locally - find cause of retraction. So I can repro an dcome up with a solution
+15:46: Meanwhile, think about the other issue - if it does revert how to avoid getting stuck with old blocks
+
+31/08 16:56: Unknown old block parent - why does it happen only after queue full?
+
+POA repro:
+
+re: queue full + unknown parent: could be because subchain gets fully downloaded but not all inserted, and a following subchain subsequently gets downloaded and can't be inserted because unknown parent
+
+however, another angle is that after initial queue full - it has also reverted to 0 again and now gets to a certain point before it goes back because the blocks are already all in the chain? It seems to be fighting between retracting and going forwards, retracting but moving forwards a few blocks at a time
+
+
+03/09/18
+========
+
+Testing Idle state, considering options for preventing 'missing block parent'. Pausing sync:
+
+test out whether pausing the old block sync here (add Waiting state) will fix issue
+						// just need to unpause on check_resume checking whether old block import queue is full
+						// if that works I can abstract the queue pausing with NewBlocks
+
+						// alternatively we could do something a bit more sophisticated, and instead of throwing blocks away we could
+						// only drain as many as we can handle in the queue to avoid throwing away, and then pausing. However not sure how this would affect other threads - will it still try to download future blocks in the meantime. Could keep them in 'blocks' until queued. Do we need to drain blocks all at once? Or use some kind of 2PC. Need to keep it simple though! Quick fix, then refactor later.

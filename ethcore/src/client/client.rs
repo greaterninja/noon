@@ -2067,6 +2067,10 @@ impl IoClient for Client {
 		});
 	}
 
+	fn ancient_block_queue_empty(&self) -> bool {
+		self.queue_ancient_blocks.is_empty()
+	}
+
 	fn queue_ancient_block(&self, unverified: Unverified, receipts_bytes: Bytes) -> Result<H256, BlockImportError> {
 		trace_time!("queue_ancient_block");
 
@@ -2572,5 +2576,9 @@ impl IoChannelQueue {
 			},
 			Err(e) => bail!(QueueErrorKind::Channel(e)),
 		}
+	}
+
+	pub fn is_empty(&self) -> bool {
+		self.currently_queued.load(AtomicOrdering::Relaxed) == 0
 	}
 }
