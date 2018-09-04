@@ -978,7 +978,7 @@ impl ChainSync {
 			_ => (),
 		}
 		if let Some(old_blocks) = self.old_blocks.as_mut() {
-			if !io.chain().ancient_block_queue_empty() {
+			if io.chain().ancient_block_queue_empty() {
 				old_blocks.resume_if_paused();
 			}
 		}

@@ -876,7 +876,7 @@ impl IoClient for TestBlockChainClient {
 	}
 
 	fn ancient_block_queue_empty(&self) -> bool {
-		false
+		true
 	}
 
 	fn queue_consensus_message(&self, message: Bytes) {
