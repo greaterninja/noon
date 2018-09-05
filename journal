@@ -44,3 +44,36 @@ test out whether pausing the old block sync here (add Waiting state) will fix is
 
 						// alternatively we could do something a bit more sophisticated, and instead of throwing blocks away we could
 						// only drain as many as we can handle in the queue to avoid throwing away, and then pausing. However not sure how this would affect other threads - will it still try to download future blocks in the meantime. Could keep them in 'blocks' until queued. Do we need to drain blocks all at once? Or use some kind of 2PC. Need to keep it simple though! Quick fix, then refactor later.
+
+04/09/2018
+==========
+
+Pauses, but it stil succumbs to Unknown parent. Local log critical point:
+
+2018-09-04 17:28:03  IO Worker #1 TRACE sync  Starting round (last imported count = Some(10072), last started = 2387129, block = 2397202
+2018-09-04 17:28:09  IO Worker #0 TRACE sync  Resetting sync round to: 0xaef5…15dc
+2018-09-04 17:28:10  IO Worker #1 TRACE sync  Starting round (last imported count = Some(19918), last started = 2397202, block = 2417121
+2018-09-04 17:28:10  IO Worker #2 TRACE sync  Unknown new block parent 0xcff9a5ca80780b19c8c0e873befcf474477261d90c3aeb8f8f3e574362c6d099, h: 0xf43a76551187028569f03be63d66014c299cd457c12913ab6a9be7a98d1e55a5 restarting sync
+2018-09-04 17:28:10  IO Worker #2 TRACE sync  Resetting sync round to: 0xaef5…15dc
+2018-09-04 17:28:10  IO Worker #0 TRACE sync  Starting round (last imported count = Some(0), last started = 2417121, block = 2417121
+
+The key is in the collect_blocks - need to just figure out how we get into that state. REPRODUCE!
+
+05/09/2018
+==========
+
+So it resets and then delayed response from peer with blocks ahead of queue full cut off. Need to prevent those blocks being added.
+
+What if I add those missing heads
+
+Converging on some ideas:
+
+Either chunk drain so that we don't discard blocks when import queue full. Head only advances as far as blocks which are imported. Difference with new blocks queue which accepts all blocks and pauses syncing. Would keep the round going if not emptying the blocks completely. Problem: checking queue size before draining, queue might be populated by another thread. RACE CONDITION. Also code might be a bit tricky.
+
+Or on Waiting we can reset peers while waiting so we don't keep requesting future
+
+ALSO: Check TODO about checking heads on ChainHead are enough apart to avoid 
+
+Multiple rounds with neighbouring chain heads making imported last round = 0 and triggering retraction
+
+

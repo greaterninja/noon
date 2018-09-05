@@ -252,6 +252,18 @@ impl BlockDownloader {
 	/// Add new block headers.
 	pub fn import_headers(&mut self, io: &mut SyncIo, r: &Rlp, expected_hash: Option<H256>) -> Result<DownloadAction, BlockDownloaderImportError> {
 		let item_count = r.item_count().unwrap_or(0);
+
+		let finfo = SyncHeader::from_rlp(r.at(0)?.as_raw().to_vec())?;
+		let fbn = BlockNumber::from(finfo.header.number());
+		let fh = finfo.header.hash();
+
+		let linfo = SyncHeader::from_rlp(r.at(item_count - 1)?.as_raw().to_vec())?;
+		let lbn = BlockNumber::from(linfo.header.number());
+		let lh = linfo.header.hash();
+
+		// trace_if!(target: "sync", "import_headers: item_count {:?}", item_count);
+		trace_if!(self, target: "sync", "import_headers: item_count {:?}, from {:?} {:?}, to {:?} {:?}, last_imported_block {:?} {:?}", item_count, fbn, fh, lh, lbn, self.last_imported_block, self.last_imported_hash);
+
 		if self.state == State::Idle || self.state == State::Waiting {
 			trace_if!(self, target: "sync", "Ignored unexpected block headers, state = {:?}", self.state);
 			return Ok(DownloadAction::None)
@@ -313,10 +325,15 @@ impl BlockDownloader {
 			State::ChainHead => {
 				if !headers.is_empty() {
 					// TODO: validate heads better. E.g. check that there is enough distance between blocks.
-					trace_if!(self, target: "sync", "Received {} subchain heads, proceeding to download", headers.len());
-					self.blocks.reset_to(hashes);
-					self.state = State::Blocks;
-					return Ok(DownloadAction::Reset);
+					let is_subchains = item_count as u64 == SUBCHAIN_SIZE;
+					if is_subchains {
+						trace_if!(self, target: "sync", "Received {} subchain heads, proceeding to download", headers.len());
+						self.blocks.reset_to(hashes);
+						self.state = State::Blocks;
+						return Ok(DownloadAction::Reset);
+					} else {
+						trace_if!(self, target: "sync", "ChainHead & received consecutive headers starting #S{:?} {:?}", fbn, fh);
+					}
 				} else {
 					let best = io.chain().chain_info().best_block_number;
 					let oldest_reorg = io.chain().pruning_info().earliest_state;
