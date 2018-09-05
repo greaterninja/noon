@@ -198,6 +198,14 @@ pub fn no_work_required() -> Error {
 	}
 }
 
+pub fn unavailable_block() -> Error {
+	Error {
+		code: ErrorCode::ServerError(codes::UNSUPPORTED_REQUEST),
+		message: "Block is unavailable".into(),
+		data: None,
+	}
+}
+
 pub fn check_for_unavailable_block<T>(sync_status: RpcResult<SyncStatus>) -> impl Fn(Option<T>) ->
 RpcResult<Option<T>> {
 	move |res| {
@@ -205,11 +213,7 @@ RpcResult<Option<T>> {
 			if let Ok(SyncStatus::Info(_)) = sync_status {
 				// alas, we're still syncing!
 				warn!("RPC call is unavailable while synching");
-				return Err(Error {
-					code: ErrorCode::ServerError(codes::UNSUPPORTED_REQUEST),
-					message: "Block is unavailable".into(),
-					data: None,
-				});
+				return Err(unavailable_block());
 			}
 		}
 		Ok(res)
