@@ -72,8 +72,73 @@ Either chunk drain so that we don't discard blocks when import queue full. Head 
 
 Or on Waiting we can reset peers while waiting so we don't keep requesting future
 
-ALSO: Check TODO about checking heads on ChainHead are enough apart to avoid 
+ALSO: Check TODO about checking heads on ChainHead are enough apart to avoid
 
 Multiple rounds with neighbouring chain heads making imported last round = 0 and triggering retraction
+
+
+07/09/2018
+==========
+
+Here is a trace of the issue from current stable against POA network:
+
+Query:
+
+```
+egrep -v ' 455' sync.log | egrep 'imported count = None.*started = [0-3][0-9]+|queue is full|restarting|Resetting downloads|Downloading old blocks|14:01.*Searching common|14:01.*Starting round|Restarting|14:01:[3-5].*(Headers|Ignored unexpected|subchain heads)|a70a.*feed' | more
+```
+
+```
+-> 2018-09-06 14:01:32  IO Worker #3 TRACE sync  3 <- GetBlockHeaders: 128 entries starting from 0xa70a…feed, set = OldBlocks
+
+2018-09-06 14:01:32  IO Worker #2 TRACE sync  4 -> BlockHeaders (128 entries), state = Idle, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #2 TRACE sync  7 -> BlockHeaders (128 entries), state = Idle, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #3 TRACE sync  11 <- GetBlockHeaders: 128 entries starting from 0xf45a…fc8d, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  59 -> BlockHeaders (128 entries), state = Idle, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #2 TRACE sync  70 -> BlockHeaders (128 entries), state = Idle, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #2 TRACE sync  New header: a70a4749d8165a2f73b095e036c6c474e84183fd52f524a1affa94214f97feed
+2018-09-06 14:01:32  IO Worker #0 TRACE sync  6 <- GetBlockHeaders: 128 entries starting from 0x03d7…2b31, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #2 TRACE sync  17 <- GetBlockHeaders: 128 entries starting from 0xdfd3…5f35, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #0 DEBUG sync  Bad block 0xe3bf9e1b8df91aaca1146f8dad74d2f94040a38eeaf569800e947bcfddaf3ad1 : BlockImportError(Other("The que
+ue is full (4096)"), State { next_error: None, backtrace: None })
+2018-09-06 14:01:32  IO Worker #0 TRACE sync  Downloading old blocks from 0x53eabaa1db0ffd42d05cffffb52a20de63118a821d08c7d4ed5e97642afbb9d4 (#1916802) till
+ Some(0x2e3154397d3f547fc4de423257d425d99e2f3cc52fcaa5c5e6d5dd7ed0cf063d) (#Some(4555000))
+2018-09-06 14:01:32  IO Worker #0 TRACE sync  Restarting
+2018-09-06 14:01:32  IO Worker #0 TRACE sync  Starting round (last imported count = None, last started = 1916802, block = 1916802
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  3 -> BlockHeaders (128 entries), state = Idle, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  Received 128 subchain heads, proceeding to download
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  3 <- GetBlockHeaders: 128 entries starting from 0xa70a…feed, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  34 <- GetBlockHeaders: 128 entries starting from 0x46b4…6ebd, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #2 TRACE sync  11: Ignored unexpected headers, expected_hash = None
+2018-09-06 14:01:32  IO Worker #2 TRACE sync  11 <- GetBlockHeaders: 128 entries starting from 0x15bf…9dd5, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #0 TRACE sync  17: Ignored unexpected headers, expected_hash = None
+2018-09-06 14:01:32  IO Worker #0 TRACE sync  17 <- GetBlockHeaders: 128 entries starting from 0x5dfb…2712, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #2 TRACE sync  6: Ignored unexpected headers, expected_hash = None
+2018-09-06 14:01:32  IO Worker #2 TRACE sync  6 <- GetBlockHeaders: 128 entries starting from 0x0ae1…a847, set = OldBlocks
+
+-> 2018-09-06 14:01:32  IO Worker #0 TRACE sync  3 -> BlockHeaders (128 entries), state = Idle, set = OldBlocks
+
+2018-09-06 14:01:32  IO Worker #0 TRACE sync  New head 0xa70a…feed
+2018-09-06 14:01:32  IO Worker #0 TRACE sync  New header: a70a4749d8165a2f73b095e036c6c474e84183fd52f524a1affa94214f97feed
+2018-09-06 14:01:32  IO Worker #0 TRACE sync  Completed subchain 0xa70a4749d8165a2f73b095e036c6c474e84183fd52f524a1affa94214f97feed
+2018-09-06 14:01:32  IO Worker #0 TRACE sync  Unknown new block parent, restarting sync
+2018-09-06 14:01:32  IO Worker #0 TRACE sync  Starting round (last imported count = Some(0), last started = 1916802, block = 1916802
+2018-09-06 14:01:32  IO Worker #0 TRACE sync  Searching common header in the blockchain 1916802 (0x0fec…ddf1)
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  Ignored unexpected block bodies
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  Starting round (last imported count = Some(0), last started = 1916801, block = 1916801
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  Searching common header in the blockchain 1916801 (0x9a2a…f421)
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  11 -> BlockHeaders (128 entries), state = Idle, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  Received 128 subchain heads, proceeding to download
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  11 <- GetBlockHeaders: 128 entries starting from 0x15bf…9dd5, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  3 <- GetBlockHeaders: 128 entries starting from 0x5dfb…2712, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  4 <- GetBlockHeaders: 128 entries starting from 0x0ae1…a847, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  17: Ignored unexpected headers, expected_hash = None
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  17 <- GetBlockHeaders: 128 entries starting from 0x4377…160d, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  34: Ignored unexpected headers, expected_hash = None
+2018-09-06 14:01:32  IO Worker #1 TRACE sync  34 <- GetBlockHeaders: 128 entries starting from 0x4e07…d49a, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #3 TRACE sync  11 -> BlockHeaders (128 entries), state = Idle, set = OldBlocks
+2018-09-06 14:01:32  IO Worker #3 TRACE sync  Unknown new block parent, restarting sync
+
+```
 
 

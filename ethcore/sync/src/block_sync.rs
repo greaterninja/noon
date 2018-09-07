@@ -264,6 +264,11 @@ impl BlockDownloader {
 		// trace_if!(target: "sync", "import_headers: item_count {:?}", item_count);
 		trace_if!(self, target: "sync", "import_headers: item_count {:?}, from {:?} {:?}, to {:?} {:?}, last_imported_block {:?} {:?}", item_count, fbn, fh, lh, lbn, self.last_imported_block, self.last_imported_hash);
 
+		if self.state == State::Waiting {
+			trace_if!(self, target: "sync", "Ignored unexpected block headers, state = {:?}", self.state);
+			return Ok(DownloadAction::Reset)
+		}
+
 		if self.state == State::Idle || self.state == State::Waiting {
 			trace_if!(self, target: "sync", "Ignored unexpected block headers, state = {:?}", self.state);
 			return Ok(DownloadAction::None)
@@ -325,15 +330,28 @@ impl BlockDownloader {
 			State::ChainHead => {
 				if !headers.is_empty() {
 					// TODO: validate heads better. E.g. check that there is enough distance between blocks.
-					let is_subchains = item_count as u64 == SUBCHAIN_SIZE;
-					if is_subchains {
-						trace_if!(self, target: "sync", "Received {} subchain heads, proceeding to download", headers.len());
-						self.blocks.reset_to(hashes);
-						self.state = State::Blocks;
-						return Ok(DownloadAction::Reset);
-					} else {
-						trace_if!(self, target: "sync", "ChainHead & received consecutive headers starting #S{:?} {:?}", fbn, fh);
-					}
+					let ns = headers.iter().map(|h| BlockNumber::from(h.header.number())).collect::<Vec<_>>();
+					trace_if!(self, target: "sync", "Received {} subchain heads: {:?}, proceeding to download", headers.len(), ns);
+					self.blocks.reset_to(hashes);
+					self.state = State::Blocks;
+					return Ok(DownloadAction::Reset);
+					// if headers.len() >= 2 {
+					// 	let h0 = headers[0].header.number();
+					// 	let h1 = headers[1].header.number();
+					// 	let is_subchains = h1 - h0 > 1; // todo [AJ] enough that they at least have a gap?
+
+					// 	if is_subchains {
+					// 		let ns = headers.iter().map(|h| BlockNumber::from(h.header.number())).collect::<Vec<_>>();
+					// 		trace_if!(self, target: "sync", "Received {} subchain heads: {:?}, proceeding to download", headers.len(), ns);
+					// 		self.blocks.reset_to(hashes);
+					// 		self.state = State::Blocks;
+					// 		return Ok(DownloadAction::Reset);
+					// 	} else {
+					// 		trace_if!(self, target: "sync", "ChainHead & received consecutive headers starting #{:?} {:?}, state = {:?}", fbn, fh, self.state);
+					// 	}
+					// } else {
+					// 	trace_if!(self, target: "sync", "Expected at least 2 headers, got {:?}", headers.len())
+					// }
 				} else {
 					let best = io.chain().chain_info().best_block_number;
 					let oldest_reorg = io.chain().pruning_info().earliest_state;
@@ -467,7 +485,7 @@ impl BlockDownloader {
 			State::ChainHead => {
 				if num_active_peers < MAX_PARALLEL_SUBCHAIN_DOWNLOAD {
 					// Request subchain headers
-					trace_if!(self, target: "sync", "Starting sync with better chain");
+					trace_if!(self, target: "sync", "Starting sync with better chain from #{:?} {:?}", self.last_imported_block, self.last_imported_hash);
 					// Request MAX_HEADERS_TO_REQUEST - 2 headers apart so that
 					// MAX_HEADERS_TO_REQUEST would include headers for neighbouring subchains
 					return Some(BlockRequest::Headers {
@@ -515,7 +533,6 @@ impl BlockDownloader {
 	/// Checks if there are blocks fully downloaded that can be imported into the blockchain and does the import.
 	pub fn collect_blocks(&mut self, io: &mut SyncIo, allow_out_of_order: bool) -> Result<(), BlockDownloaderImportError> {
 		let mut bad = false;
-		let mut reset = false;
 		let mut pause = false;
 		let mut imported = HashSet::new();
 		let blocks = self.blocks.drain();
@@ -556,22 +573,18 @@ impl BlockDownloader {
 					self.block_imported(&h, number, &parent);
 				},
 				Err(BlockImportError(BlockImportErrorKind::Block(BlockError::UnknownParent(_)), _)) if allow_out_of_order => {
-					reset = true;
 					break;
 				},
 				Err(BlockImportError(BlockImportErrorKind::Block(BlockError::UnknownParent(_)), _)) => {
 					trace_if!(self, target: "sync", "Unknown new block parent {:?}, h: {:?} restarting sync", parent, h);
-					reset = true;
 					break;
 				},
 				Err(BlockImportError(BlockImportErrorKind::Block(BlockError::TemporarilyInvalid(_)), _)) => {
 					debug_if!(self, target: "sync", "Block temporarily invalid, restarting sync");
-					reset = true;
 					break;
 				},
 				Err(BlockImportError(BlockImportErrorKind::Queue(QueueErrorKind::Full(limit)), _)) => {
 					debug_if!(self, target: "sync", "Block import queue full ({}), restarting sync", limit);
-					reset = true;
 					pause = true;
 					break;
 				},
@@ -586,6 +599,13 @@ impl BlockDownloader {
 		self.imported_this_round = Some(self.imported_this_round.unwrap_or(0) + imported.len());
 		trace_if!(self, target: "sync", "collect_blocks: self.imported_this_round: {:?}", self.imported_this_round);
 
+		if pause {
+			trace_if!(self, target: "sync", "Pausing syncing after import queue full");
+			self.reset();
+			self.state = State::Waiting;
+			return Ok(());
+		}
+
 		if self.blocks.is_empty() {
 			// complete sync round
 			trace_if!(self, target: "sync", "Sync round complete");
@@ -595,19 +615,6 @@ impl BlockDownloader {
 
 		if bad {
 			return Err(BlockDownloaderImportError::Invalid);
-		}
-
-		if reset {
-			// there was an error importing one of the blocks so we reset the sync to the last successful imported hash
-			trace_if!(self, target: "sync", "Resetting sync round to: {}", self.last_imported_hash);
-			let hashes = vec![self.last_imported_hash];
-			self.reset();
-			self.blocks.reset_to(hashes);
-		}
-
-		if pause {
-			trace_if!(self, target: "sync", "Pausing sync round");
-			self.state = State::Waiting;
 		}
 
 		Ok(())
