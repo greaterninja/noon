@@ -20,9 +20,9 @@ use std::collections::BTreeMap;
 
 use jsonrpc_core::{BoxFuture, Result};
 use jsonrpc_macros::Trailing;
-
+use v1::types::RichBasicAccount;
 use v1::types::{
-	H160, H256, H512, U256, U64, Bytes, CallRequest,
+	H160, H256, H512, U256, H520, U64, Bytes, CallRequest,
 	Peers, Transaction, RpcSettings, Histogram,
 	TransactionStats, LocalTransactionStatus,
 	BlockNumber, ConsensusCapability, VersionInfo,
@@ -224,5 +224,9 @@ build_rpc_trait! {
 		/// Call contract, returning the output data.
 		#[rpc(name = "parity_call")]
 		fn call(&self, Vec<CallRequest>, Trailing<BlockNumber>) -> Result<Vec<Bytes>>;
+
+		/// ecrecover signature
+		#[rpc(name = "parity_verifySignature")]
+		fn verify_signature(&self, bool, Bytes, H520) -> Result<RichBasicAccount>;
 	}
 }

@@ -36,11 +36,11 @@ use updater::{Service as UpdateService};
 use jsonrpc_core::{BoxFuture, Result};
 use jsonrpc_core::futures::future;
 use jsonrpc_macros::Trailing;
-use v1::helpers::{self, errors, fake_sign, ipfs, SigningQueue, SignerService, NetworkSettings};
+use v1::helpers::{self, errors, fake_sign, ipfs, SigningQueue, SignerService, NetworkSettings, verify_signature};
 use v1::metadata::Metadata;
 use v1::traits::Parity;
 use v1::types::{
-	Bytes, U256, U64, H160, H256, H512, CallRequest,
+	Bytes, U256, U64, H160, H256, H520, H512, CallRequest,
 	Peers, Transaction, RpcSettings, Histogram,
 	TransactionStats, LocalTransactionStatus,
 	BlockNumber, ConsensusCapability, VersionInfo,
@@ -49,6 +49,7 @@ use v1::types::{
 	block_number_to_id
 };
 use Host;
+use v1::types::RichBasicAccount;
 
 /// Parity implementation.
 pub struct ParityClient<C, M, U> {
@@ -470,5 +471,9 @@ impl<C, M, U, S> Parity for ParityClient<C, M, U> where
 		self.client.call_many(&requests, &mut state, &header)
 				.map(|res| res.into_iter().map(|res| res.output.into()).collect())
 				.map_err(errors::call)
+	}
+
+	fn verify_signature(&self, is_prefixed: bool, message: Bytes, signature: H520) -> Result<RichBasicAccount> {
+		verify_signature(is_prefixed, message, signature)
 	}
 }
