@@ -38,7 +38,7 @@ use v1::helpers::light_fetch::LightFetch;
 use v1::metadata::Metadata;
 use v1::traits::Parity;
 use v1::types::{
-	Bytes, U256, U64, H160,H520, H256, H512, CallRequest,
+	Bytes, U256, U64, H160, H520, H256, H512, CallRequest,
 	Peers, Transaction, RpcSettings, Histogram,
 	TransactionStats, LocalTransactionStatus,
 	BlockNumber, LightBlockNumber, ConsensusCapability, VersionInfo,
