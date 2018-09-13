@@ -22,7 +22,7 @@ use jsonrpc_core::{BoxFuture, Result};
 use jsonrpc_macros::Trailing;
 use v1::types::RichBasicAccount;
 use v1::types::{
-	H160, H256, H512, U256, H520, U64, Bytes, CallRequest,
+	H160, H256, H512, U256, U64, Bytes, CallRequest,
 	Peers, Transaction, RpcSettings, Histogram,
 	TransactionStats, LocalTransactionStatus,
 	BlockNumber, ConsensusCapability, VersionInfo,
@@ -227,6 +227,6 @@ build_rpc_trait! {
 
 		/// ecrecover signature
 		#[rpc(name = "parity_verifySignature")]
-		fn verify_signature(&self, bool, Bytes, H520) -> Result<RichBasicAccount>;
+		fn verify_signature(&self, bool, Bytes, H256, H256, u64) -> Result<RichBasicAccount>;
 	}
 }
