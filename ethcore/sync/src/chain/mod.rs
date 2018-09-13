@@ -704,7 +704,6 @@ impl ChainSync {
 
 	/// Enter waiting state
 	fn pause_sync(&mut self) {
-		trace!(target: "sync", "Block queue full, pausing sync");
 		self.state = SyncState::Waiting;
 	}
 
@@ -744,6 +743,7 @@ impl ChainSync {
 				},
 				SyncState::Idle | SyncState::Blocks | SyncState::NewBlocks => {
 					if io.chain().queue_info().is_full() {
+						trace!(target: "sync", "Block queue full, pausing sync");
 						self.pause_sync();
 						return;
 					}
@@ -947,6 +947,7 @@ impl ChainSync {
 	fn check_resume(&mut self, io: &mut SyncIo) {
 		match self.state {
 			SyncState::Waiting if !io.chain().queue_info().is_full() => {
+				trace!(target: "sync", "Block queue un-full, continuing sync");
 				self.state = SyncState::Blocks;
 				self.continue_sync(io);
 			},

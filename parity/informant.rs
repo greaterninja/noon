@@ -299,7 +299,7 @@ impl<T: InformantData> Informant<T> {
 		info!(target: "import", "{}  {}  {}  {}",
 			match importing {
 				true => match snapshot_sync {
-					false => format!("Syncing {} {}  {}  {}+{} Qed",
+					false => format!("Syncing {} {}  {}  {}+{}+{} Qed",
 						paint(White.bold(), format!("{:>8}", format!("#{}", chain_info.best_block_number))),
 						paint(White.bold(), format!("{}", chain_info.best_block_hash)),
 						if self.target.executes_transactions() {
@@ -314,6 +314,7 @@ impl<T: InformantData> Informant<T> {
 							)
 						},
 						paint(Green.bold(), format!("{:5}", queue_info.unverified_queue_size)),
+						paint(Green.bold(), format!("{:5}", queue_info.verifying_queue_size)),
 						paint(Green.bold(), format!("{:5}", queue_info.verified_queue_size))
 					),
 					true => {

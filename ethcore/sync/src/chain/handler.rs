@@ -98,13 +98,15 @@ impl SyncHandler {
 			Err(DownloaderImportError::Useless) => {
 				sync.deactivate_peer(io, peer);
 			},
+			Err(DownloaderImportError::Ignored) => {
+			},
 			Ok(()) => {
 				// give a task to the same peer first
 				sync.sync_peer(io, peer, false);
 			},
 		}
 		// give tasks to other peers
-		sync.continue_sync(io);
+		// sync.continue_sync(io);
 	}
 
 	/// Called when peer sends us new consensus packet
@@ -136,7 +138,7 @@ impl SyncHandler {
 					sync.state = ChainSync::get_init_state(sync.warp_sync, io.chain());
 				}
 			}
-			sync.continue_sync(io);
+			// sync.continue_sync(io);
 		}
 	}
 
@@ -155,7 +157,7 @@ impl SyncHandler {
 	pub fn on_peer_new_block(sync: &mut ChainSync, io: &mut SyncIo, peer_id: PeerId, r: &Rlp) -> Result<(), DownloaderImportError> {
 		if !sync.peers.get(&peer_id).map_or(false, |p| p.can_sync()) {
 			trace!(target: "sync", "Ignoring new block from unconfirmed peer {}", peer_id);
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 		let difficulty: U256 = r.val_at(1)?;
 		if let Some(ref mut peer) = sync.peers.get_mut(&peer_id) {
@@ -219,7 +221,7 @@ impl SyncHandler {
 	pub fn on_peer_new_hashes(sync: &mut ChainSync, io: &mut SyncIo, peer_id: PeerId, r: &Rlp) -> Result<(), DownloaderImportError> {
 		if !sync.peers.get(&peer_id).map_or(false, |p| p.can_sync()) {
 			trace!(target: "sync", "Ignoring new hashes from unconfirmed peer {}", peer_id);
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 		let hashes: Vec<_> = r.iter().take(MAX_NEW_HASHES).map(|item| (item.val_at::<H256>(0), item.val_at::<BlockNumber>(1))).collect();
 		if let Some(ref mut peer) = sync.peers.get_mut(&peer_id) {
@@ -235,7 +237,7 @@ impl SyncHandler {
 			if max > sync.highest_block.unwrap_or(0) {
 				sync.highest_block = Some(max);
 			}
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 		trace!(target: "sync", "{} -> NewHashes ({} entries)", peer_id, r.item_count()?);
 		let mut max_height: BlockNumber = 0;
@@ -294,7 +296,7 @@ impl SyncHandler {
 			.unwrap_or(BlockSet::NewBlocks);
 		if !sync.reset_peer_asking(peer_id, PeerAsking::BlockBodies) {
 			trace!(target: "sync", "{}: Ignored unexpected bodies", peer_id);
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 		let item_count = r.item_count()?;
 		trace!(target: "sync", "{} -> BlockBodies ({} entries), set = {:?}", peer_id, item_count, block_set);
@@ -302,7 +304,7 @@ impl SyncHandler {
 			Err(DownloaderImportError::Useless)
 		} else if sync.state == SyncState::Waiting {
 			trace!(target: "sync", "Ignored block bodies while waiting");
-			Ok(())
+			return Err(DownloaderImportError::Ignored);
 		} else {
 			{
 				let downloader = match block_set {
@@ -370,17 +372,17 @@ impl SyncHandler {
 		let block_set = sync.peers.get(&peer_id).and_then(|p| p.block_set).unwrap_or(BlockSet::NewBlocks);
 		if !sync.reset_peer_asking(peer_id, PeerAsking::BlockHeaders) || expected_hash.is_none() || !allowed {
 			trace!(target: "sync", "{}: Ignored unexpected headers, expected_hash = {:?}", peer_id, expected_hash);
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 		let item_count = r.item_count()?;
 		trace!(target: "sync", "{} -> BlockHeaders ({} entries), state = {:?}, set = {:?}", peer_id, item_count, sync.state, block_set);
 		if (sync.state == SyncState::Idle || sync.state == SyncState::WaitingPeers) && sync.old_blocks.is_none() {
 			trace!(target: "sync", "Ignored unexpected block headers");
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 		if sync.state == SyncState::Waiting {
 			trace!(target: "sync", "Ignored block headers while waiting");
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 
 		let result = {
@@ -417,7 +419,7 @@ impl SyncHandler {
 		let block_set = sync.peers.get(&peer_id).and_then(|p| p.block_set).unwrap_or(BlockSet::NewBlocks);
 		if !sync.reset_peer_asking(peer_id, PeerAsking::BlockReceipts) {
 			trace!(target: "sync", "{}: Ignored unexpected receipts", peer_id);
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 		let item_count = r.item_count()?;
 		trace!(target: "sync", "{} -> BlockReceipts ({} entries)", peer_id, item_count);
@@ -425,7 +427,7 @@ impl SyncHandler {
 			Err(DownloaderImportError::Useless)
 		} else if sync.state == SyncState::Waiting {
 			trace!(target: "sync", "Ignored block receipts while waiting");
-			Ok(())
+			return Err(DownloaderImportError::Ignored);
 		} else {
 			{
 				let downloader = match block_set {
@@ -449,12 +451,12 @@ impl SyncHandler {
 	fn on_snapshot_manifest(sync: &mut ChainSync, io: &mut SyncIo, peer_id: PeerId, r: &Rlp) -> Result<(), DownloaderImportError> {
 		if !sync.peers.get(&peer_id).map_or(false, |p| p.can_sync()) {
 			trace!(target: "sync", "Ignoring snapshot manifest from unconfirmed peer {}", peer_id);
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 		sync.clear_peer_download(peer_id);
 		if !sync.reset_peer_asking(peer_id, PeerAsking::SnapshotManifest) || sync.state != SyncState::SnapshotManifest {
 			trace!(target: "sync", "{}: Ignored unexpected/expired manifest", peer_id);
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 
 		let manifest_rlp = r.at(0)?;
@@ -478,12 +480,12 @@ impl SyncHandler {
 	fn on_snapshot_data(sync: &mut ChainSync, io: &mut SyncIo, peer_id: PeerId, r: &Rlp) -> Result<(), DownloaderImportError> {
 		if !sync.peers.get(&peer_id).map_or(false, |p| p.can_sync()) {
 			trace!(target: "sync", "Ignoring snapshot data from unconfirmed peer {}", peer_id);
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 		sync.clear_peer_download(peer_id);
 		if !sync.reset_peer_asking(peer_id, PeerAsking::SnapshotData) || (sync.state != SyncState::SnapshotData && sync.state != SyncState::SnapshotWaiting) {
 			trace!(target: "sync", "{}: Ignored unexpected snapshot data", peer_id);
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 
 		// check service status
@@ -612,11 +614,11 @@ impl SyncHandler {
 		// Accept transactions only when fully synced
 		if !io.is_chain_queue_empty() || (sync.state != SyncState::Idle && sync.state != SyncState::NewBlocks) {
 			trace!(target: "sync", "{} Ignoring transactions while syncing", peer_id);
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 		if !sync.peers.get(&peer_id).map_or(false, |p| p.can_sync()) {
 			trace!(target: "sync", "{} Ignoring transactions from unconfirmed/unknown peer", peer_id);
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 
 		let item_count = r.item_count()?;
@@ -635,7 +637,7 @@ impl SyncHandler {
 	fn on_signed_private_transaction(sync: &mut ChainSync, _io: &mut SyncIo, peer_id: PeerId, r: &Rlp) -> Result<(), DownloaderImportError> {
 		if !sync.peers.get(&peer_id).map_or(false, |p| p.can_sync()) {
 			trace!(target: "sync", "{} Ignoring packet from unconfirmed/unknown peer", peer_id);
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 
 		trace!(target: "sync", "Received signed private transaction packet from {:?}", peer_id);
@@ -657,7 +659,7 @@ impl SyncHandler {
 	fn on_private_transaction(sync: &mut ChainSync, _io: &mut SyncIo, peer_id: PeerId, r: &Rlp) -> Result<(), DownloaderImportError> {
 		if !sync.peers.get(&peer_id).map_or(false, |p| p.can_sync()) {
 			trace!(target: "sync", "{} Ignoring packet from unconfirmed/unknown peer", peer_id);
-			return Ok(());
+			return Err(DownloaderImportError::Ignored);
 		}
 
 		trace!(target: "sync", "Received private transaction packet from {:?}", peer_id);

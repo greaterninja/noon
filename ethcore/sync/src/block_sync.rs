@@ -78,6 +78,8 @@ pub enum BlockDownloaderImportError {
 	Invalid,
 	/// Imported data is valid but rejected cause the downloader does not need it.
 	Useless,
+	/// Imported data is ignored.
+	Ignored,
 }
 
 impl From<rlp::DecoderError> for BlockDownloaderImportError {

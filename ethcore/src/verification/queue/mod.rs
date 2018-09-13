@@ -395,7 +395,7 @@ impl<K: Kind> VerificationQueue<K> {
 			};
 			if is_ready {
 				// Import the block immediately
-				ready.set_sync();
+				ready.set_async();
 			}
 		}
 	}
@@ -564,6 +564,7 @@ impl<K: Kind> VerificationQueue<K> {
 
 	/// Removes up to `max` verified items from the queue
 	pub fn drain(&self, max: usize) -> Vec<K::Verified> {
+		trace!(target: "verification", "Draining verification queue.");
 		let mut verified = self.verification.verified.lock();
 		let count = cmp::min(max, verified.len());
 		let result = verified.drain(..count).collect::<Vec<_>>();
