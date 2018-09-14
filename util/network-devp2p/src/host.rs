@@ -1022,6 +1022,7 @@ impl IoHandler<NetworkIoMessage> for Host {
 	}
 
 	fn timeout(&self, io: &IoContext<NetworkIoMessage>, token: TimerToken) {
+		trace_time!("devp2p::host");
 		if self.stopping.load(AtomicOrdering::Acquire) {
 			return;
 		}

@@ -413,6 +413,8 @@ pub struct ChainSync {
 	private_tx_handler: Arc<PrivateTxHandler>,
 	/// Enable warp sync.
 	warp_sync: WarpSync,
+	// Last time `maintain_sync` was called
+	last_maintain_sync: ::std::time::Instant,
 }
 
 impl ChainSync {
@@ -440,6 +442,7 @@ impl ChainSync {
 			transactions_stats: TransactionsStats::default(),
 			private_tx_handler,
 			warp_sync: config.warp_sync,
+			last_maintain_sync: ::std::time::Instant::now(),
 		};
 		sync.update_targets(chain);
 		sync
@@ -1076,6 +1079,15 @@ impl ChainSync {
 
 	/// Maintain other peers. Send out any new blocks and transactions
 	pub fn maintain_sync(&mut self, io: &mut SyncIo) {
+		let elapsed_since_last = self.last_maintain_sync.elapsed();
+		self.last_maintain_sync = ::std::time::Instant::now();
+
+		if elapsed_since_last > ::std::time::Duration::from_millis(1500) {
+			warn!(target: "sync", "`maintain_sync` was called {}s ago!",
+				elapsed_since_last.as_secs() as f64
+			+ elapsed_since_last.subsec_nanos() as f64 * 1e-9
+			);
+		}
 		self.maybe_start_snapshot_sync(io);
 		self.check_resume(io);
 	}
