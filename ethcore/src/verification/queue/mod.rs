@@ -395,7 +395,7 @@ impl<K: Kind> VerificationQueue<K> {
 			};
 			if is_ready {
 				// Import the block immediately
-				ready.set_async();
+				ready.set_sync();
 			}
 		}
 	}

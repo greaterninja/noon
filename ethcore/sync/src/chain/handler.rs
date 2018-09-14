@@ -99,6 +99,9 @@ impl SyncHandler {
 				sync.deactivate_peer(io, peer);
 			},
 			Err(DownloaderImportError::Ignored) => {
+				if ::std::env::var("DEFAULT").is_ok() {
+					sync.sync_peer(io, peer, false);
+				}
 			},
 			Ok(()) => {
 				// give a task to the same peer first
@@ -106,7 +109,9 @@ impl SyncHandler {
 			},
 		}
 		// give tasks to other peers
-		// sync.continue_sync(io);
+		if ::std::env::var("DEFAULT").is_ok() {
+			sync.continue_sync(io);
+		}
 	}
 
 	/// Called when peer sends us new consensus packet
@@ -138,7 +143,10 @@ impl SyncHandler {
 					sync.state = ChainSync::get_init_state(sync.warp_sync, io.chain());
 				}
 			}
-			// sync.continue_sync(io);
+
+			if ::std::env::var("DEFAULT").is_ok() {
+				sync.continue_sync(io);
+			}
 		}
 	}
 
