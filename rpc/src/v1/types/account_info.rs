@@ -15,7 +15,6 @@
 // along with Parity.  If not, see <http://www.gnu.org/licenses/>.
 
 use ethereum_types::{Public, Address};
-use v1::types::Rich;
 
 /// Account information.
 #[derive(Debug, Default, Clone, PartialEq, Serialize)]
@@ -60,5 +59,3 @@ pub struct BasicAccount {
 	/// this would be true, otherwise false.
 	pub is_valid_for_current_chain: bool
 }
-
-pub type RichBasicAccount = Rich<BasicAccount>;

@@ -45,7 +45,7 @@ use v1::types::{
 	TransactionStats, LocalTransactionStatus,
 	BlockNumber, ConsensusCapability, VersionInfo,
 	OperationsInfo, ChainStatus,
-	AccountInfo, HwAccountInfo, RichHeader, Receipt, RichBasicAccount,
+	AccountInfo, HwAccountInfo, RichHeader, Receipt, BasicAccount,
 	block_number_to_id
 };
 use Host;
@@ -472,7 +472,7 @@ impl<C, M, U, S> Parity for ParityClient<C, M, U> where
 				.map_err(errors::call)
 	}
 
-	fn verify_signature(&self, is_prefixed: bool, message: Bytes, r: H256, s: H256, v: u64) -> Result<RichBasicAccount> {
+	fn verify_signature(&self, is_prefixed: bool, message: Bytes, r: H256, s: H256, v: U64) -> Result<BasicAccount> {
 		verify_signature(is_prefixed, message, v, r, s, self.client.signing_chain_id())
 	}
 }
