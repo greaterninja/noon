@@ -34,15 +34,16 @@ extern crate trezor_sys;
 mod ledger;
 mod trezor;
 
-use std::sync::{Arc, atomic, atomic::AtomicBool};
+use std::sync::{Arc, atomic, atomic::AtomicBool, Weak};
 use std::{fmt, time::Duration};
+use std::thread;
 
 use ethereum_types::U256;
 use ethkey::{Address, Signature};
 use parking_lot::Mutex;
 
 const USB_DEVICE_CLASS_DEVICE: u8 = 0;
-const POLLING_DURATION: Duration = Duration::from_millis(500);
+const MAX_POLLING_DURATION: Duration = Duration::from_millis(500);
 
 /// `HardwareWallet` device
 #[derive(Debug)]
@@ -218,8 +219,43 @@ impl HardwareWalletManager {
 	pub fn new() -> Result<Self, Error> {
 		let exiting = Arc::new(AtomicBool::new(false));
 		let hidapi = Arc::new(Mutex::new(hidapi::HidApi::new().map_err(|e| Error::Hid(e.to_string().clone()))?));
-		let ledger = ledger::Manager::new(hidapi.clone(), exiting.clone())?;
-		let trezor = trezor::Manager::new(hidapi.clone(), exiting.clone())?;
+		let ledger = ledger::Manager::new(hidapi.clone());
+		let trezor = trezor::Manager::new(hidapi.clone());
+		let usb_context = Arc::new(libusb::Context::new()?);
+
+		let l = ledger.clone();
+		let t = trezor.clone();
+		let exit = exiting.clone();
+
+		let manager = Arc::new(Self {
+			exiting: exiting.clone(),
+			ledger: ledger.clone(),
+			trezor: trezor.clone(),
+		});
+
+		// Subscribe for all vendor IDs (VIDs) and product IDs (PIDs) 
+		// This means that all individual device implementation need to check that VID and PID is valid
+		usb_context.register_callback(
+			None, None, Some(USB_DEVICE_CLASS_DEVICE),
+			Box::new(EventHandler::new(Arc::downgrade(&manager)))
+		)?;
+
+		// Hardware event subscriber thread
+		thread::Builder::new()
+			.name("hw_wallet_manager".to_string())
+			.spawn(move || {
+				if let Err(e) = l.update_devices(DeviceDirection::Arrived) {
+					debug!(target: "hw", "Ledger couldn't connect at startup, error: {}", e);
+				}
+				if let Err(e) = t.update_devices(DeviceDirection::Arrived) {
+					debug!(target: "hw", "Trezor couldn't connect at startup, error: {}", e);
+				}
+
+				while !exit.load(atomic::Ordering::Acquire) {
+					usb_context.handle_events(Some(Duration::from_millis(500))).unwrap_or_else(|e| debug!(target: "hw", "HardwareWalletManager event handler error: {}", e));
+				}
+			})
+			.ok();
 
 		Ok(Self {
 			exiting,
@@ -299,3 +335,51 @@ impl Drop for HardwareWalletManager {
 		self.exiting.store(true, atomic::Ordering::Release);
 	}
 }
+
+/// Hardware wallet event handler
+///
+/// Note, that this run to completion and race-conditions can't occur but this can
+/// therefore starve other events for being process with a spinlock or similar
+struct EventHandler {
+	manager: Weak<HardwareWalletManager>,
+}
+
+impl EventHandler {
+	/// Trezor event handler constructor
+	pub fn new(manager: Weak<HardwareWalletManager>) -> Self {
+		Self { manager }
+	}
+}
+
+impl libusb::Hotplug for EventHandler {
+	fn device_arrived(&mut self, device: libusb::Device) {
+		if let Some(manager) = self.manager.upgrade() {
+			if trezor::is_valid_trezor(&device).is_ok() {
+				if trezor::try_connect_polling(&manager.trezor, &MAX_POLLING_DURATION, DeviceDirection::Arrived) != true {
+					trace!(target: "hw", "Trezor device was detected but connection failed");
+				}
+			}
+			if ledger::is_valid_ledger(&device).is_ok() {
+				if ledger::try_connect_polling(&manager.ledger, &MAX_POLLING_DURATION, DeviceDirection::Arrived) != true {
+					trace!(target: "hw", "Ledger device was detected but connection failed ");
+				}
+			}
+		}
+	}
+
+	fn device_left(&mut self, device: libusb::Device) {
+		if let Some(manager) = self.manager.upgrade() {
+			if trezor::is_valid_trezor(&device).is_ok() {
+				if ledger::try_connect_polling(&manager.ledger, &MAX_POLLING_DURATION, DeviceDirection::Left) != true {
+					trace!(target: "hw", "Trezor device was detected but disconnection failed ");
+				}
+			}
+			if ledger::is_valid_ledger(&device).is_ok() {
+				if ledger::try_connect_polling(&manager.ledger, &MAX_POLLING_DURATION, DeviceDirection::Left) != true {
+					trace!(target: "hw", "Ledger device was detected but disconnection failed ");
+				}
+			}
+		}
+	}
+}
+

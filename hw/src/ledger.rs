@@ -19,9 +19,9 @@
 
 use std::cmp::min;
 use std::str::FromStr;
-use std::sync::{atomic, atomic::AtomicBool, Arc, Weak};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::{fmt, thread};
+use std::fmt;
 
 use ethereum_types::{H256, Address};
 use ethkey::Signature;
@@ -29,7 +29,7 @@ use hidapi;
 use libusb;
 use parking_lot::{Mutex, RwLock};
 use semver::Version as FirmwareVersion;
-use super::{WalletInfo, KeyPath, Device, DeviceDirection, Wallet, USB_DEVICE_CLASS_DEVICE, POLLING_DURATION};
+use super::{WalletInfo, KeyPath, Device, DeviceDirection, Wallet};
 
 const APDU_TAG: u8 = 0x05;
 const APDU_CLA: u8 = 0xe0;
@@ -71,14 +71,14 @@ pub enum Error {
 	KeyNotFound,
 	/// Signing has been cancelled by user.
 	UserCancel,
-	/// Invalid device
-	InvalidDevice,
 	/// Impossible error
 	Impossible,
 	/// No device arrived
 	NoDeviceArrived,
 	/// No device left
 	NoDeviceLeft,
+	/// Invalid PID or VID
+	InvalidDevice,
 }
 
 impl fmt::Display for Error {
@@ -89,10 +89,10 @@ impl fmt::Display for Error {
 			Error::LibUsb(ref e) => write!(f, "LibUSB communication error: {}", e),
 			Error::KeyNotFound => write!(f, "Key not found"),
 			Error::UserCancel => write!(f, "Operation has been cancelled"),
-			Error::InvalidDevice => write!(f, "Unsupported product was entered"),
 			Error::Impossible => write!(f, "Placeholder error"),
 			Error::NoDeviceArrived => write!(f, "No device arrived"),
 			Error::NoDeviceLeft=> write!(f, "No device left"),
+			Error::InvalidDevice => write!(f, "Invalid device was detected, a device with non-supported product ID or vendor ID was detected"),
 		}
 	}
 }
@@ -110,7 +110,7 @@ impl From<libusb::Error> for Error {
 }
 
 /// Ledger device manager.
-pub (crate) struct Manager {
+pub struct Manager {
 	usb: Arc<Mutex<hidapi::HidApi>>,
 	devices: RwLock<Vec<Device>>,
 	key_path: RwLock<KeyPath>,
@@ -118,41 +118,12 @@ pub (crate) struct Manager {
 
 impl Manager {
 	/// Create a new instance.
-	pub fn new(hidapi: Arc<Mutex<hidapi::HidApi>>, exiting: Arc<AtomicBool>) -> Result<Arc<Self>, libusb::Error> {
-		let manager = Arc::new(Self {
-			usb: hidapi,
+	pub fn new(usb: Arc<Mutex<hidapi::HidApi>>) -> Arc<Self> {
+		Arc::new(Self {
+			usb,
 			devices: RwLock::new(Vec::new()),
 			key_path: RwLock::new(KeyPath::Ethereum),
-		});
-
-		let usb_context = Arc::new(libusb::Context::new()?);
-		let m = manager.clone();
-
-		// Subscribe to all Ledger devices
-		// This means that we need to check that the given productID is supported
-		// None => LIBUSB_HOTPLUG_MATCH_ANY, in other words that all are subscribed to
-		// More info can be found: <http://libusb.sourceforge.net/api-1.0/group__hotplug.html#gae6c5f1add6cc754005549c7259dc35ea>
-		usb_context.register_callback(
-			Some(LEDGER_VID), None, Some(USB_DEVICE_CLASS_DEVICE),
-			Box::new(EventHandler::new(Arc::downgrade(&manager)))).expect("usb_callback");
-
-		// Ledger event handler thread
-		thread::Builder::new()
-			.spawn(move || {
-				if let Err(e) = m.update_devices(DeviceDirection::Arrived) {
-					debug!(target: "hw", "Ledger couldn't connect at startup, error: {}", e);
-				}
-				loop {
-					usb_context.handle_events(Some(Duration::from_millis(500)))
-						.unwrap_or_else(|e| debug!(target: "hw", "Ledger event handler error: {}", e));
-					if exiting.load(atomic::Ordering::Acquire) {
-						break;
-					}
-				}
-			})
-			.ok();
-
-		Ok(manager)
+		})
 	}
 
 	// Transport Protocol:
@@ -280,17 +251,6 @@ impl Manager {
 		Self::read(&handle)
 	}
 
-	fn is_valid_ledger(device: &libusb::Device) -> Result<(), Error> {
-		let desc = device.device_descriptor()?;
-		let vendor_id = desc.vendor_id();
-		let product_id = desc.product_id();
-
-		if vendor_id == LEDGER_VID && LEDGER_PIDS.contains(&product_id) {
-			Ok(())
-		} else {
-			Err(Error::InvalidDevice)
-		}
-	}
 
 	fn get_firmware_version(handle: &hidapi::HidDevice) -> Result<FirmwareVersion, Error> {
 		let ver = Self::send_apdu(&handle, commands::GET_APP_CONFIGURATION, 0, 0, &[])?;
@@ -363,17 +323,6 @@ impl Manager {
 	}
 }
 
-// Try to connect to the device using polling in at most the time specified by the `timeout`
-fn try_connect_polling(ledger: &Manager, timeout: &Duration, device_direction: DeviceDirection) -> bool {
-	let start_time = Instant::now();
-	while start_time.elapsed() <= *timeout {
-		if let Ok(num_devices) = ledger.update_devices(device_direction) {
-			trace!(target: "hw", "{} number of Ledger(s) {}", num_devices, device_direction);
-			return true;
-		}
-	}
-	false
-}
 
 impl <'a>Wallet<'a> for Manager {
 	type Error = Error;
@@ -491,42 +440,30 @@ impl <'a>Wallet<'a> for Manager {
 	}
 }
 
-/// Ledger event handler
-/// A separate thread is handling incoming events
-///
-/// Note, that this run to completion and race-conditions can't occur but this can
-/// therefore starve other events for being process with a spinlock or similar
-struct EventHandler {
-	ledger: Weak<Manager>,
-}
+/// Check if a detected device is a `Parity supported` Ledger device by checking both the product ID and the vendor ID
+pub fn is_valid_ledger(device: &libusb::Device) -> Result<(), Error> {
+	let desc = device.device_descriptor()?;
+	let vendor_id = desc.vendor_id();
+	let product_id = desc.product_id();
 
-impl EventHandler {
-	/// Ledger event handler constructor
-	fn new(ledger: Weak<Manager>) -> Self {
-		Self { ledger }
+	if vendor_id == LEDGER_VID && LEDGER_PIDS.contains(&product_id) {
+		Ok(())
+	} else {
+		Err(Error::InvalidDevice)
 	}
 }
 
-impl libusb::Hotplug for EventHandler {
-	fn device_arrived(&mut self, device: libusb::Device) {
-		debug!(target: "hw", "Ledger arrived");
-		if let (Some(ledger), Ok(_)) = (self.ledger.upgrade(), Manager::is_valid_ledger(&device)) {
-			if try_connect_polling(&ledger, &POLLING_DURATION, DeviceDirection::Arrived) != true {
-				debug!(target: "hw", "No Ledger device was connected");
-			}
+/// Poll the device in maximum `max_polling_duration` if it doesn't succeed
+pub fn try_connect_polling(ledger: &Manager, max_polling_duration: &Duration, device_direction: DeviceDirection) -> bool {
+	let start_time = Instant::now();
+	while start_time.elapsed() <= *max_polling_duration {
+		if let Ok(num_devices) = ledger.update_devices(device_direction) {
+			trace!(target: "hw", "{} number of Ledger(s) {}", num_devices, device_direction);
+			return true;
 		}
 	}
-
-	fn device_left(&mut self, device: libusb::Device) {
-		debug!(target: "hw", "Ledger left");
-		if let (Some(ledger), Ok(_)) = (self.ledger.upgrade(), Manager::is_valid_ledger(&device)) {
-			if try_connect_polling(&ledger, &POLLING_DURATION, DeviceDirection::Left) != true {
-				debug!(target: "hw", "No Ledger device was disconnected");
-			}
-		}
-	}
+	false
 }
-
 
 #[cfg(test)]
 mod tests {
