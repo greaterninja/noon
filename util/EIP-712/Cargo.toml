@@ -2,7 +2,6 @@
 name = "eip712"
 version = "0.1.0"
 authors = ["Seun LanLege <seunlanlege@gmail.com>"]
-edition = "2018"
 
 [dependencies]
 serde_derive = "1.0.79"
@@ -13,4 +12,3 @@ ethabi = "6.0.1"
 keccak-hash = "0.1.2"
 ethereum-types = "0.4.0"
 hex = "0.3.2"
-

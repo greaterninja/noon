@@ -136,8 +136,7 @@ members = [
 	"util/triehash-ethereum",
 	"util/keccak-hasher",
 	"util/patricia-trie-ethereum",
-	"util/fastmap",
-	"util/EIP-720"
+	"util/fastmap"
 ]
 
 [patch.crates-io]

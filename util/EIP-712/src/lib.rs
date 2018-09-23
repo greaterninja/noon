@@ -1,6 +1,7 @@
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
 extern crate serde_json;
 extern crate ethabi;
 extern crate ethereum_types;
@@ -8,39 +9,28 @@ extern crate hex;
 extern crate keccak_hash;
 extern crate quickersort;
 
+mod eip712;
+
+pub use eip712::*;
 use ethabi::{encode, Token};
 use ethereum_types::{Address, U256};
 use keccak_hash::{keccak, H256};
 use serde_json::{Value};
-use std::collections::HashSet;
+use std::collections::{HashSet};
 use std::str::FromStr;
 
-#[derive(Serialize, Clone)]
-pub struct TypedData {
-	types: Value,
-	primary_type: String,
-	message: Value,
-	domain: Value,
-}
-
-fn build_dependencies(message_type: String, typed_data: Value) -> Option<HashSet<String>> {
-	if let Some(x) = typed_data.get(message_type.clone()) {
+fn build_dependencies<'a>(message_type: &'a String, message_types: &'a MessageTypes) -> Option<(HashSet<&'a String>)>
+{
+	if let Some(fields) = message_types.get(message_type) {
 		let mut deps = HashSet::new();
 		deps.insert(message_type);
 
-		if !x.is_array() {
-			return None;
-		}
-
-		for data_type in x.as_array().unwrap() {
-			let type_key = data_type["type"].as_str().unwrap();
-			if deps.contains(type_key) {
+		for field in fields {
+			if deps.contains(&field.type_) {
 				continue;
 			}
-			if let Some(set) = build_dependencies(type_key.into(), typed_data.clone()) {
-				set.into_iter().for_each(|dep| {
-					deps.insert(dep);
-				})
+			if let Some(set) = build_dependencies(&field.type_, &message_types) {
+				deps.extend(set);
 			}
 		}
 		return Some(deps);
@@ -48,25 +38,23 @@ fn build_dependencies(message_type: String, typed_data: Value) -> Option<HashSet
 	return None;
 }
 
-fn encode_type(message_type: String, typed_data: Value) -> String {
-	let deps: Vec<String> = {
-		let mut temp = build_dependencies(message_type.clone(), typed_data.clone()).unwrap();
+fn encode_type(message_type: &String, message_types: &MessageTypes) -> String {
+	let deps = {
+		let mut temp = build_dependencies(message_type, message_types).unwrap();
 		temp.remove(&message_type);
 		let mut temp = temp.into_iter().collect::<Vec<_>>();
 		quickersort::sort(&mut temp[..]);
-		temp.insert(0, message_type);
+		temp.insert(0, &message_type);
 		temp
 	};
 	deps.into_iter().fold(String::new(), |mut acc, dep| {
-		let types = typed_data[dep.clone()]
-			.as_array()
-			.unwrap()
-			.into_iter()
+		// this unwrap is safe because we're searching for a dependency that was recently pulled out of message_types
+		let types = message_types.get(dep).unwrap().iter()
 			.map(|value| {
 				format!(
 					"{} {}",
-					value["type"].as_str().unwrap(),
-					value["name"].as_str().unwrap()
+					value.type_,
+					value.name
 				)
 			}).collect::<Vec<_>>();
 
@@ -75,24 +63,17 @@ fn encode_type(message_type: String, typed_data: Value) -> String {
 	})
 }
 
-fn type_hash(message_type: String, typed_data: Value) -> H256 {
+fn type_hash(message_type: &String, typed_data: &MessageTypes) -> H256 {
 	keccak(encode_type(message_type, typed_data))
 }
 
-fn encode_data(message_type: String, types: Value, message: Value) -> Vec<u8> {
-	let type_hash = type_hash(message_type.clone(), types.clone()).0.to_vec();
+fn encode_data(message_type: String, message_types: MessageTypes, message: Value) -> Vec<u8> {
+	let type_hash = type_hash(&message_type, &message_types).0.to_vec();
 	let mut tokens = vec![Token::FixedBytes(type_hash)];
 
-	let message_types = if types[message_type.clone()].is_array() {
-		types[message_type].as_array().unwrap().clone()
-	} else {
-		vec![types[message_type].clone()]
-	};
-
-	for field in message_types {
-		let value = message[field["name"].as_str().unwrap()].clone();
-		let field_type = field["type"].as_str().unwrap();
-		match field_type {
+	for field in message_types.get(&message_type).unwrap() {
+		let value = message[&field.name].clone();
+		match &*field.type_ {
 			"string" | "bytes32" => {
 				let value = value.as_str().unwrap();
 				let hash = (&keccak(value)).to_vec();
@@ -115,15 +96,15 @@ fn encode_data(message_type: String, types: Value, message: Value) -> Vec<u8> {
 					.as_array()
 					.unwrap()
 					.into_iter()
-					.map(|v| encode_data(array_type.into(), types.clone(), v.clone()))
+					.map(|v| encode_data(array_type.into(), message_types.clone(), v.clone()))
 					.fold(vec![], |mut acc, mut curr| {
 						acc.append(&mut curr);
 						acc
 					});
 				tokens.push(Token::FixedBytes(encoded));
 			}
-			t if types[t].is_array() => {
-				let data = (&keccak(encode_data(field_type.into(), types.clone(), value))).to_vec();
+			t if message_types.get(t).is_some() => {
+				let data = (&keccak(encode_data(field.type_.clone(), message_types.clone(), value))).to_vec();
 				tokens.push(Token::FixedBytes(data));
 			}
 			_ => {}
@@ -132,11 +113,7 @@ fn encode_data(message_type: String, types: Value, message: Value) -> Vec<u8> {
 	return encode(&tokens);
 }
 
-fn struct_hash(struct_type: String, types: Value, message: Value) -> Vec<u8> {
-	keccak(encode_data(struct_type, types, message)).0.to_vec()
-}
-
-pub fn hash_data(typed_data: TypedData) -> Vec<u8> {
+pub fn hash_data(typed_data: EIP712) -> Vec<u8> {
 	// json schema validation logic!
 
 	let mut preamble = (b"\x19\x01").to_vec();
@@ -152,23 +129,10 @@ pub fn hash_data(typed_data: TypedData) -> Vec<u8> {
 	keccak(concat).0.to_vec()
 }
 
-// types: Vec<MessageType>
-// primaryType: String // primaryType should exist in types.some(e => e.name === primaryType)
-// message: Value //
-// MessageType {
-// 	fields: Vec<FieldType>
-// 	name: String,
-// }
-
-// FieldType {
-// 	name: String,
-// 	type: String
-// }
-
-
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use serde_json::from_str;
 
 	#[test]
 	fn test_build_dependencies() {
@@ -190,14 +154,17 @@ mod tests {
 			]
 		}"#;
 
-		let value = from_str::<Value>(string).unwrap();
+		let value = from_str::<MessageTypes>(string).unwrap();
+		let mail = &String::from("Mail");
+		let person = &String::from("Person");
+
 		let hashset = {
 			let mut temp = HashSet::new();
-			temp.insert("Mail".to_owned());
-			temp.insert("Person".to_owned());
+			temp.insert(mail);
+			temp.insert(person);
 			temp
 		};
-		assert_eq!(build_dependencies("Mail".into(), value), Some(hashset));
+		assert_eq!(build_dependencies(mail, &value), Some(hashset));
 	}
 
 	#[test]
@@ -220,10 +187,11 @@ mod tests {
 			]
 		}"#;
 
-		let value = from_str::<Value>(string).unwrap();
+		let value = from_str::<MessageTypes>(string).unwrap();
+		let mail = &String::from("Mail");
 		assert_eq!(
 			"Mail(Person from,Person to,string contents)Person(string name,address wallet)",
-			encode_type("Mail".into(), value)
+			encode_type(mail, &value)
 		)
 	}
 
@@ -247,8 +215,9 @@ mod tests {
 			]
 		}"#;
 
-		let value = from_str::<Value>(string).unwrap();
-		let hash = hex::encode(type_hash("Mail".into(), value).0);
+		let value = from_str::<MessageTypes>(string).unwrap();
+		let mail = &String::from("Mail");
+		let hash = hex::encode(type_hash(mail, &value).0);
 		assert_eq!(
 			hash,
 			"a0cedeb2dc280ba39b857546d74f5549c3a1d7bdc2dd96bf881f76108e23dac2"
@@ -257,15 +226,15 @@ mod tests {
 
 	#[test]
 	fn test_encode_data() {
-		let typed_data = TypedData {
-			primary_type: "Mail".into(),
-			domain: json!({
+		let string = r#"{
+            "primaryType": "Mail",
+			"domain": {
 				"name": "Ether Mail",
 				"version": "1",
 				"chainId": 1,
 				"verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
-			}),
-			message: json!({
+			},
+			"message": {
 				"from": {
 					"name": "Cow",
 					"wallet": "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"
@@ -275,10 +244,10 @@ mod tests {
 					"wallet": "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"
 				},
 				"contents": "Hello, Bob!"
-			}),
-			types: json!({
+			},
+			"types": {
 				"EIP712Domain": [
-					{ "name": "name", "type": "string" },
+				    { "name": "name", "type": "string" },
 					{ "name": "version", "type": "string" },
 					{ "name": "chainId", "type": "uint256" },
 					{ "name": "verifyingContract", "type": "address" }
@@ -292,11 +261,11 @@ mod tests {
 					{ "name": "to", "type": "Person" },
 					{ "name": "contents", "type": "string" }
 				]
-			}),
-		};
+			}
+        }"#;
+		let typed_data = from_str::<EIP712>(string).unwrap();
 
 		let encoded = encode_data("Mail".into(), typed_data.types, typed_data.message);
-		assert_eq!(hex::encode(encoded),
-			"a0cedeb2dc280ba39b857546d74f5549c3a1d7bdc2dd96bf881f76108e23dac2fc71e5fa27ff56c350aa531bc129ebdf613b772b6604664f5d8dbe21b85eb0c8cd54f074a4af31b4411ff6a60c9719dbd559c221c8ac3492d9d872b041d703d1b5aadf3154a261abdd9086fc627b61efca26ae5702701d05cd2305f7c52a2fc8")
+		assert_eq!(hex::encode(encoded), "a0cedeb2dc280ba39b857546d74f5549c3a1d7bdc2dd96bf881f76108e23dac2fc71e5fa27ff56c350aa531bc129ebdf613b772b6604664f5d8dbe21b85eb0c8cd54f074a4af31b4411ff6a60c9719dbd559c221c8ac3492d9d872b041d703d1b5aadf3154a261abdd9086fc627b61efca26ae5702701d05cd2305f7c52a2fc8")
 	}
 }
