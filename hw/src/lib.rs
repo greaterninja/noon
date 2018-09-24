@@ -44,6 +44,7 @@ use parking_lot::Mutex;
 
 const USB_DEVICE_CLASS_DEVICE: u8 = 0;
 const MAX_POLLING_DURATION: Duration = Duration::from_millis(500);
+const USB_EVENT_POLLING_INTERVAL: Duration = Duration::from_millis(500);
 
 /// `HardwareWallet` device
 #[derive(Debug)]
@@ -234,7 +235,7 @@ impl HardwareWalletManager {
 		});
 
 		// Subscribe for all vendor IDs (VIDs) and product IDs (PIDs) 
-		// This means that all individual device implementation need to check that VID and PID is valid
+		// This means that the `HardwareWalletManager` is responsible to identify the detected device
 		usb_context.register_callback(
 			None, None, Some(USB_DEVICE_CLASS_DEVICE),
 			Box::new(EventHandler::new(Arc::downgrade(&manager)))
@@ -252,7 +253,9 @@ impl HardwareWalletManager {
 				}
 
 				while !exit.load(atomic::Ordering::Acquire) {
-					usb_context.handle_events(Some(Duration::from_millis(500))).unwrap_or_else(|e| debug!(target: "hw", "HardwareWalletManager event handler error: {}", e));
+					if let Err(e) = usb_context.handle_events(Some(USB_EVENT_POLLING_INTERVAL)) {
+						debug!(target: "hw", "HardwareWalletManager event handler error: {}", e);
+					}
 				}
 			})
 			.ok();
