@@ -62,7 +62,7 @@ pub trait Wallet<'a> {
 
 	/// Sign transaction data with wallet managing `address`.
 	fn sign_transaction(&self, address: &Address, transaction: Self::Transaction) -> Result<Signature, Self::Error>;
-	
+
 	/// Set key derivation path for a chain.
 	fn set_key_path(&self, key_path: KeyPath);
 
@@ -234,8 +234,8 @@ impl HardwareWalletManager {
 			trezor: trezor.clone(),
 		});
 
-		// Subscribe for all vendor IDs (VIDs) and product IDs (PIDs) 
-		// This means that the `HardwareWalletManager` is responsible to identify the detected device
+		// Subscribe for all vendor IDs (VIDs) and product IDs (PIDs)
+		// This means that the `HardwareWalletManager` is responsible to validate the detected device
 		usb_context.register_callback(
 			None, None, Some(USB_DEVICE_CLASS_DEVICE),
 			Box::new(EventHandler::new(Arc::downgrade(&manager)))

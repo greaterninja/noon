@@ -81,7 +81,7 @@ impl fmt::Display for Error {
 			Error::NoSigningMessage=> write!(f, "Signing messages are not supported by Trezor"),
 			Error::NoDeviceArrived => write!(f, "No device arrived"),
 			Error::NoDeviceLeft => write!(f, "No device left"),
-			Error::InvalidDevice => write!(f, "Invalid device was detected, a device with non-supported product ID or vendor ID was detected"),
+			Error::InvalidDevice => write!(f, "Device with non-supported product ID or vendor ID was detected"),
 		}
 	}
 }
@@ -428,7 +428,7 @@ pub fn try_connect_polling(trezor: &Manager, duration: &Duration, dir: DeviceDir
 	false
 }
 
-/// Check if a detected device is a `Parity supported` Trezor device by checking both the product ID and the vendor ID
+/// Check if the detected device is a Trezor device by checking both the product ID and the vendor ID
 pub fn is_valid_trezor(device: &libusb::Device) -> Result<(), Error> {
 	let desc = device.device_descriptor()?;
 	let vendor_id = desc.vendor_id();
@@ -447,7 +447,7 @@ pub fn is_valid_trezor(device: &libusb::Device) -> Result<(), Error> {
 /// (and unlocked) attached to the machine that's running the test
 fn test_signature() {
 	use ethereum_types::{H160, H256, U256};
-        use MAX_POLLING_DURATION;
+	use MAX_POLLING_DURATION;
 
 	let manager = Manager::new(
 		Arc::new(Mutex::new(hidapi::HidApi::new().expect("HidApi"))),

@@ -92,7 +92,7 @@ impl fmt::Display for Error {
 			Error::Impossible => write!(f, "Placeholder error"),
 			Error::NoDeviceArrived => write!(f, "No device arrived"),
 			Error::NoDeviceLeft=> write!(f, "No device left"),
-			Error::InvalidDevice => write!(f, "Invalid device was detected, a device with non-supported product ID or vendor ID was detected"),
+			Error::InvalidDevice => write!(f, "Device with non-supported product ID or vendor ID was detected"),
 		}
 	}
 }
@@ -128,18 +128,18 @@ impl Manager {
 
 	// Transport Protocol:
 	//		* Communication Channel Id		(2 bytes big endian )
-	//		* Command Tag					(1 byte) 
+	//		* Command Tag				(1 byte)
 	//		* Packet Sequence ID			(2 bytes big endian)
-	//		* Payload						(Optional)
+	//		* Payload				(Optional)
 	//
 	// Payload
-	//		* APDU Total Length				(2 bytes big endian)
-	//		* APDU_CLA						(1 byte)
-	//		* APDU_INS						(1 byte)
-	//		* APDU_P1						(1 byte)
-	//		* APDU_P2						(1 byte)
-	//		* APDU_LENGTH					(1 byte)
-	//		* APDU_Payload					(Variable)
+	//		* APDU Total Length			(2 bytes big endian)
+	//		* APDU_CLA				(1 byte)
+	//		* APDU_INS				(1 byte)
+	//		* APDU_P1				(1 byte)
+	//		* APDU_P2				(1 byte)
+	//		* APDU_LENGTH				(1 byte)
+	//		* APDU_Payload				(Variable)
 	// 
 	fn write(handle: &hidapi::HidDevice, command: u8, p1: u8, p2: u8, data: &[u8]) -> Result<(), Error> {
 		let data_len = data.len();
@@ -440,7 +440,7 @@ impl <'a>Wallet<'a> for Manager {
 	}
 }
 
-/// Check if a detected device is a `Parity supported` Ledger device by checking both the product ID and the vendor ID
+/// Check if the detected device is a valid `Ledger device` by checking both the product ID and the vendor ID
 pub fn is_valid_ledger(device: &libusb::Device) -> Result<(), Error> {
 	let desc = device.device_descriptor()?;
 	let vendor_id = desc.vendor_id();
