@@ -382,4 +382,3 @@ impl libusb::Hotplug for EventHandler {
 		}
 	}
 }
-

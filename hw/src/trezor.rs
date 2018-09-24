@@ -447,15 +447,15 @@ pub fn is_valid_trezor(device: &libusb::Device) -> Result<(), Error> {
 /// (and unlocked) attached to the machine that's running the test
 fn test_signature() {
 	use ethereum_types::{H160, H256, U256};
+        use MAX_POLLING_DURATION;
 
 	let manager = Manager::new(
 		Arc::new(Mutex::new(hidapi::HidApi::new().expect("HidApi"))),
-		Arc::new(AtomicBool::new(false))
-	).expect("HardwareWalletManager");
+	);
 	
 	let addr: Address = H160::from("some_addr");
 
-	assert_eq!(try_connect_polling(&manager.clone(), &POLLING_DURATION, DeviceDirection::Arrived), true);
+	assert_eq!(try_connect_polling(&manager.clone(), &MAX_POLLING_DURATION, DeviceDirection::Arrived), true);
 
 	let t_info = TransactionInfo {
 		nonce: U256::from(1),

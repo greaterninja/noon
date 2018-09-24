@@ -474,10 +474,7 @@ mod tests {
 	#[test]
 	#[ignore]
 	fn sign_personal_message() {
-		let manager = Manager::new(
-			Arc::new(Mutex::new(hidapi::HidApi::new().expect("HidApi"))),
-			Arc::new(AtomicBool::new(false))
-		).expect("HardwareWalletManager");
+		let manager = Manager::new(Arc::new(Mutex::new(hidapi::HidApi::new().expect("HidApi"))));
 
 		// Update device list
 		manager.update_devices(DeviceDirection::Arrived).expect("No Ledger found, make sure you have a unlocked Ledger connected with the Ledger Wallet Ethereum running");
@@ -502,8 +499,7 @@ mod tests {
 	fn smoke() {
 		let manager = Manager::new(
 			Arc::new(Mutex::new(hidapi::HidApi::new().expect("HidApi"))),
-			Arc::new(AtomicBool::new(false))
-		).expect("HardwareWalletManager");
+		);
 
 		// Update device list
 		manager.update_devices(DeviceDirection::Arrived).expect("No Ledger found, make sure you have a unlocked Ledger connected with the Ledger Wallet Ethereum running");
