@@ -1,90 +1,40 @@
+// Copyright 2015-2018 Parity Technologies (UK) Ltd.
+// This file is part of Parity.
+
+// Parity is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+// Parity is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+
+// You should have received a copy of the GNU General Public License
+// along with Parity.  If not, see <http://www.gnu.org/licenses/>.
+
 use serde_json::{Value};
-use serde::de::{self, Deserialize, Deserializer, Visitor, MapAccess};
-use std::fmt;
 use std::collections::HashMap;
 
-pub type MessageTypes = HashMap<String, Vec<FieldType>>;
+pub(crate) type MessageTypes = HashMap<String, Vec<FieldType>>;
 
-#[derive(Debug, Clone)]
+/// EIP-712 struct
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct EIP712 {
-	pub types: MessageTypes,
-	pub primary_type: String,
-	pub message: Value,
-	pub domain: Value,
+	pub(crate) types: MessageTypes,
+	pub(crate) primary_type: String,
+	pub(crate) message: Value,
+	pub(crate) domain: Value,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FieldType {
+pub(crate) struct FieldType {
 	pub name: String,
 	#[serde(rename = "type")]
 	pub type_: String
-}
-
-impl<'de> Deserialize<'de> for EIP712 {
-	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-		where
-			D: Deserializer<'de>,
-	{
-		struct EIP712Visitor;
-
-		impl<'de> Visitor<'de> for EIP712Visitor {
-			type Value = EIP712;
-
-			fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-				formatter.write_str("struct EIP712")
-			}
-
-			fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
-				where
-					V: MapAccess<'de>,
-			{
-				let mut types = None;
-				let mut primary_type = None;
-				let mut domain = None;
-				let mut message = None;
-				while let Some(key) = map.next_key()? {
-					match key {
-						"types" => {
-							if types.is_some() {
-								return Err(de::Error::duplicate_field("types"));
-							}
-							types = Some(map.next_value()?);
-						}
-						"domain" => {
-							if domain.is_some() {
-								return Err(de::Error::duplicate_field("domain"));
-							}
-							domain = Some(map.next_value()?);
-						},
-						"message" => {
-							if message.is_some() {
-								return Err(de::Error::duplicate_field("message"));
-							}
-							message = Some(map.next_value()?);
-						},
-						"primaryType" => {
-							if primary_type.is_some() {
-								return Err(de::Error::duplicate_field("primary_type"));
-							}
-							primary_type = Some(map.next_value()?);
-						},
-						// invalid keys don't count
-						_ => {}
-					}
-				}
-
-				let types = types.ok_or_else(|| de::Error::missing_field("types"))?;
-				let primary_type = primary_type.ok_or_else(|| de::Error::missing_field("primary_type"))?;
-				let domain = domain.ok_or_else(|| de::Error::missing_field("domain"))?;
-				let message = message.ok_or_else(|| de::Error::missing_field("message"))?;
-
-				Ok(EIP712 { types, primary_type, message, domain })
-			}
-		}
-
-		const FIELDS: &'static [&'static str] = &["types", "primary_type", "message", "domain"];
-		deserializer.deserialize_struct("EIP712", FIELDS, EIP712Visitor)
-	}
 }
 
 #[cfg(test)]
