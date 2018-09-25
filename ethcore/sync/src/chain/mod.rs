@@ -855,7 +855,8 @@ impl ChainSync {
 	}
 
 	/// Checks if there are blocks fully downloaded that can be imported into the blockchain and does the import.
-	fn collect_blocks(&mut self, io: &mut SyncIo, block_set: BlockSet) {
+	pub fn collect_blocks(&mut self, io: &mut SyncIo) {
+		let block_set = BlockSet::NewBlocks;
 		match block_set {
 			BlockSet::NewBlocks => {
 				if self.new_blocks.collect_blocks(io, self.state == SyncState::NewBlocks) == Err(DownloaderImportError::Invalid) {

@@ -327,7 +327,7 @@ impl SyncHandler {
 				};
 				downloader.import_bodies(r)?;
 			}
-			sync.collect_blocks(io, block_set);
+			// sync.collect_blocks(io, block_set);
 			Ok(())
 		}
 	}
@@ -417,7 +417,7 @@ impl SyncHandler {
 			}
 		}
 
-		sync.collect_blocks(io, block_set);
+		// sync.collect_blocks(io, block_set);
 		Ok(())
 	}
 
@@ -450,7 +450,7 @@ impl SyncHandler {
 				};
 				downloader.import_receipts(io, r)?;
 			}
-			sync.collect_blocks(io, block_set);
+			// sync.collect_blocks(io, block_set);
 			Ok(())
 		}
 	}

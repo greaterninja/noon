@@ -383,7 +383,8 @@ impl SyncProvider for EthSync {
 
 const PEERS_TIMER: TimerToken = 0;
 const SYNC_TIMER: TimerToken = 1;
-const TX_TIMER: TimerToken = 2;
+const COLLECT_BLOCKS_TIMER: TimerToken = 2;
+const TX_TIMER: TimerToken = 3;
 
 struct SyncProtocolHandler {
 	/// Shared blockchain client.
@@ -401,6 +402,7 @@ impl NetworkProtocolHandler for SyncProtocolHandler {
 		if io.subprotocol_name() != WARP_SYNC_PROTOCOL_ID {
 			io.register_timer(PEERS_TIMER, Duration::from_millis(700)).expect("Error registering peers timer");
 			io.register_timer(SYNC_TIMER, Duration::from_millis(1100)).expect("Error registering sync timer");
+			io.register_timer(COLLECT_BLOCKS_TIMER, Duration::from_millis(1500)).expect("Error registering collect blocks timer");
 			io.register_timer(TX_TIMER, Duration::from_millis(1300)).expect("Error registering transactions timer");
 		}
 	}
@@ -432,6 +434,7 @@ impl NetworkProtocolHandler for SyncProtocolHandler {
 		match timer {
 			PEERS_TIMER => self.sync.write().maintain_peers(&mut io),
 			SYNC_TIMER => self.sync.write().maintain_sync(&mut io),
+			COLLECT_BLOCKS_TIMER => self.sync.write().collect_blocks(&mut io),
 			TX_TIMER => {
 				self.sync.write().propagate_new_transactions(&mut io);
 			},
