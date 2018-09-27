@@ -26,6 +26,7 @@ extern crate keccak_hash;
 extern crate itertools;
 extern crate failure;
 extern crate valico;
+extern crate linked_hash_set;
 #[macro_use]
 extern crate failure_derive;
 #[macro_use]
@@ -50,7 +51,8 @@ use std::collections::HashSet;
 use std::str::FromStr;
 use itertools::Itertools;
 use std::collections::HashMap;
-use std::cell::RefCell;
+use linked_hash_set::LinkedHashSet;
+
 
 lazy_static! {
     static ref INT_TYPES: HashSet<&'static str> = vec![
@@ -62,17 +64,18 @@ lazy_static! {
 
 /// given a type and HashMap<String, Vec<FieldType>>
 /// returns a HashSet of dependent types of the given type
-fn build_dependencies<'a>(message_type: &'a str, message_types: &'a MessageTypes) -> Option<(HashSet<&'a str>)>
+fn build_dependencies<'a>(message_type: &'a str, message_types: &'a MessageTypes) -> Option<(LinkedHashSet<&'a str>)>
 {
 	if message_types.get(message_type).is_none() {
-		return None
+		return None;
 	}
 
-	let mut types = vec![message_type];
-	let mut deps = HashSet::new();
+	let mut types = LinkedHashSet::new();
+	types.insert(message_type);
+	let mut deps = LinkedHashSet::new();
 
 	loop {
-		let item = match types.pop() {
+		let item = match types.pop_back() {
 			None => return Some(deps),
 			Some(item) => item,
 		};
@@ -81,11 +84,11 @@ fn build_dependencies<'a>(message_type: &'a str, message_types: &'a MessageTypes
 			deps.insert(item);
 
 			for field in fields {
-				// seen this type before? skip
-				if deps.contains(&*field.type_) {
+				// seen this type before? or not a custom type skip
+				if deps.contains(&*field.type_) || !message_types.contains_key(&*field.type_) {
 					continue;
 				}
-				types.push(&*field.type_);
+				types.insert(&*field.type_);
 			}
 		}
 	}
@@ -205,52 +208,43 @@ fn encode_primitive(field_type: &str, field_name: &str, value: &Value) -> Result
 	}
 }
 
+fn get_json_type(field_type: &str) -> &'static str {
+	match field_type {
+		"bool" => "boolean",
+		_ => "string"
+	}
+}
+
 fn build_schema(data: &EIP712) -> Result<Value> {
-	let schemas = RefCell::new(HashMap::new());
-	let mut dependencies = build_dependencies(&data.primary_type, &data.types).unwrap().into_iter().collect::<Vec<_>>();
+	let dependencies = build_dependencies(&data.primary_type, &data.types)
+		.unwrap().into_iter()
+		.collect::<Vec<_>>();
 
-	loop {
-		let current_type = match dependencies.pop() {
-			None => break,
-			Some(ty) => ty
-		};
-
-		{
-			let mut schemas_mut = schemas.borrow_mut();
+	let mut schemas = dependencies
+		.into_iter()
+		.rfold(HashMap::new(), |mut schemas, current_type| {
+			let fields = data.types.get(current_type).unwrap();
 			let schema = json!({ "type": "object", "required": [], "properties": {} });
-			schemas_mut.insert(current_type, schema);
-		}
+			schemas.insert(current_type, schema);
 
-		let fields = data.types.get(current_type).unwrap();
+			for field in fields {
+				let is_array = field.type_.len() > 1 && field.type_.rfind(']') == Some(field.type_.len() - 1);
 
-		for field in fields {
-			let is_array = false;
-
-			match data.types.contains_key(&*field.type_) {
-				is_custom_type if !is_array && is_custom_type => {
-					let type_schema = schemas.borrow().get(&*field.type_).unwrap().clone();
-					{
-						let mut schemas = schemas.borrow_mut();
-						let mut schema = schemas.get_mut(current_type).unwrap();
-						schema["properties"].as_object_mut().unwrap().insert(field.name.clone(), type_schema);
-					}
-				}
-
-				is_custom_type if is_array && is_custom_type => {
-					let type_schema = schemas.borrow().get(&*field.type_).unwrap().clone();
-					{
-						let mut schemas = schemas.borrow_mut();
+				if data.types.contains_key(&*field.type_) {
+					if is_array {
+						let type_schema = schemas.get(&*field.type_).unwrap().clone();
 						let schema = schemas.get_mut(current_type).unwrap();
 						schema["properties"]
 							.as_object_mut()
 							.unwrap()
 							.insert(field.name.clone(), json!({"type": "array", "items": type_schema }));
+					} else {
+						let type_schema = schemas.get(&*field.type_).unwrap().clone();
+						let mut schema = schemas.get_mut(current_type).unwrap();
+						schema["properties"].as_object_mut().unwrap().insert(field.name.clone(), type_schema);
 					}
-				}
-
-				is_custom_type if is_array && !is_custom_type => {
-					{
-						let mut schemas = schemas.borrow_mut();
+				} else {
+					if is_array {
 						let schema = schemas.get_mut(current_type).unwrap();
 
 						if !schema["properties"][&field.name].is_object() {
@@ -260,38 +254,24 @@ fn build_schema(data: &EIP712) -> Result<Value> {
 						}
 
 						schema["properties"][&field.name]["items"]
-							.as_object_mut().unwrap().insert(field.name.clone(), json!({ "type": "string" }));
-					}
-					// use the appropriate type
-				}
-
-				is_custom_type if !is_array && !is_custom_type => {
-					{
-						let mut schemas = schemas.borrow_mut();
+							.as_object_mut().unwrap().insert(field.name.clone(), json!({ "type": get_json_type(&field.type_) }));
+					} else {
 						let schema = schemas.get_mut(current_type).unwrap();
 
 						schema["properties"]
-							.as_object_mut().unwrap().insert(field.name.clone(), json!({ "type": "string" }));
+							.as_object_mut().unwrap().insert(field.name.clone(),json!({ "type": get_json_type(&field.type_) }));
 					}
-					// use the appropriate type
 				}
-
-				_ => {}
-			}
-			{
-				let mut schemas = schemas.borrow_mut();
+				// add field names to the required array.
 				let schema = schemas.get_mut(current_type).unwrap();
 				schema["required"].as_array_mut().unwrap().push(json!(field.name));
 			}
-		}
-	}
 
-	let mut schemas_mut =  schemas.borrow_mut();
-	let schema = schemas_mut.remove(&*data.primary_type).unwrap();
+			schemas
+		});
 
-	println!("{:#?}", schema);
-
-	return Ok(schema)
+	let schema = schemas.remove(&*data.primary_type).unwrap();
+	return Ok(schema);
 }
 
 /// encodes and hashes the given EIP712 struct
@@ -383,7 +363,7 @@ mod tests {
 		let person = "Person";
 
 		let hashset = {
-			let mut temp = HashSet::new();
+			let mut temp = LinkedHashSet::new();
 			temp.insert(mail);
 			temp.insert(person);
 			temp
