@@ -217,7 +217,8 @@ fn get_json_type(field_type: &str) -> &'static str {
 
 fn build_schema(data: &EIP712) -> Result<Value> {
 	let dependencies = build_dependencies(&data.primary_type, &data.types)
-		.unwrap().into_iter()
+		.ok_or_else(|| ErrorKind::NonExistentType)?
+		.into_iter()
 		.collect::<Vec<_>>();
 
 	let mut schemas = dependencies
