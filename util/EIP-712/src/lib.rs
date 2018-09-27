@@ -17,12 +17,15 @@
 //! EIP-712 encoding, signining utilities
 #![warn(missing_docs, unused_extern_crates)]
 
+extern crate serde;
+#[macro_use]
 extern crate serde_json;
 extern crate ethabi;
 extern crate ethereum_types;
 extern crate keccak_hash;
 extern crate itertools;
 extern crate failure;
+extern crate valico;
 #[macro_use]
 extern crate failure_derive;
 #[macro_use]
@@ -40,12 +43,14 @@ pub use error::*;
 pub use eip712::*;
 
 use ethabi::{encode, Token};
-use ethereum_types::{Address, U256};
-use keccak_hash::{keccak, H256};
+use ethereum_types::{Address, U256, H256};
+use keccak_hash::keccak;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::str::FromStr;
 use itertools::Itertools;
+use std::collections::HashMap;
+use std::cell::RefCell;
 
 lazy_static! {
     static ref INT_TYPES: HashSet<&'static str> = vec![
@@ -59,24 +64,31 @@ lazy_static! {
 /// returns a HashSet of dependent types of the given type
 fn build_dependencies<'a>(message_type: &'a str, message_types: &'a MessageTypes) -> Option<(HashSet<&'a str>)>
 {
-	// get the associated FieldType of the given type
-	if let Some(fields) = message_types.get(message_type) {
-		let mut deps = HashSet::new();
-		deps.insert(message_type);
+	if message_types.get(message_type).is_none() {
+		return None
+	}
 
-		for field in fields {
-			// seen this type before? skip
-			if deps.contains(&*field.type_) {
-				continue;
-			}
-			if let Some(set) = build_dependencies(&field.type_, &message_types) {
-				deps.extend(set);
+	let mut types = vec![message_type];
+	let mut deps = HashSet::new();
+
+	loop {
+		let item = match types.pop() {
+			None => return Some(deps),
+			Some(item) => item,
+		};
+
+		if let Some(fields) = message_types.get(item) {
+			deps.insert(item);
+
+			for field in fields {
+				// seen this type before? skip
+				if deps.contains(&*field.type_) {
+					continue;
+				}
+				types.push(&*field.type_);
 			}
 		}
-		return Some(deps);
 	}
-	// primitive types like uint256, address wouldn't exist in MessageTypes
-	return None;
 }
 
 fn encode_type(message_type: &str, message_types: &MessageTypes) -> Result<String> {
@@ -116,12 +128,23 @@ fn encode_data(message_type: &str, message_types: &MessageTypes, message: &Value
 		let value = &message[&field.name];
 		match &*field.type_ {
 			// Array type e.g uint256[], string[]
-			ty if ty.rfind(']') == Some(ty.len() - 1) => {
-				let array_type = ty.split('[').collect::<Vec<_>>()[0];
+			ty if ty.len() > 1 && ty.rfind(']') == Some(ty.len() - 1) => {
+				let array_type = ty.find('[')
+					.and_then(|index| ty.get(..index))
+					.ok_or_else(|| ErrorKind::ArrayParseError(field.name.clone()))?;
+
 				let mut items = vec![];
+
 				for item in value.as_array().ok_or_else(|| serde_error("array", &field.name))? {
-					let encoded = encode_data(array_type.into(), &message_types, item)?;
-					items.push(encoded);
+					// is the array defined in the custom types?
+					if let Some(_) = message_types.get(array_type) {
+						let encoded = encode_data(array_type.into(), &message_types, item)?;
+						items.push(encoded);
+					} else {
+						// it's either a primitive or invalid
+						let token = encode_primitive(array_type.into(), &field.name, item)?;
+						items.push(encode(&[token]));
+					}
 				}
 				tokens.push(Token::FixedBytes(keccak(items.concat()).0.to_vec()));
 			}
@@ -143,6 +166,12 @@ fn encode_data(message_type: &str, message_types: &MessageTypes, message: &Value
 
 fn encode_primitive(field_type: &str, field_name: &str, value: &Value) -> Result<Token> {
 	match field_type {
+		"bytes32" => {
+			let string = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
+			let bytes = H256::from_str(string).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
+			let hash = (&keccak(&bytes)).to_vec();
+			return Ok(Token::FixedBytes(hash));
+		}
 		"string" => {
 			let value = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
 			let hash = (&keccak(value)).to_vec();
@@ -176,15 +205,100 @@ fn encode_primitive(field_type: &str, field_name: &str, value: &Value) -> Result
 	}
 }
 
-fn validate(data: &EIP712) -> Result<()> {
+fn build_schema(data: &EIP712) -> Result<Value> {
+	let schemas = RefCell::new(HashMap::new());
+	let mut dependencies = build_dependencies(&data.primary_type, &data.types).unwrap().into_iter().collect::<Vec<_>>();
 
+	loop {
+		let current_type = match dependencies.pop() {
+			None => break,
+			Some(ty) => ty
+		};
+
+		{
+			let mut schemas_mut = schemas.borrow_mut();
+			let schema = json!({ "type": "object", "required": [], "properties": {} });
+			schemas_mut.insert(current_type, schema);
+		}
+
+		let fields = data.types.get(current_type).unwrap();
+
+		for field in fields {
+			let is_array = false;
+
+			match data.types.contains_key(&*field.type_) {
+				is_custom_type if !is_array && is_custom_type => {
+					let type_schema = schemas.borrow().get(&*field.type_).unwrap().clone();
+					{
+						let mut schemas = schemas.borrow_mut();
+						let mut schema = schemas.get_mut(current_type).unwrap();
+						schema["properties"].as_object_mut().unwrap().insert(field.name.clone(), type_schema);
+					}
+				}
+
+				is_custom_type if is_array && is_custom_type => {
+					let type_schema = schemas.borrow().get(&*field.type_).unwrap().clone();
+					{
+						let mut schemas = schemas.borrow_mut();
+						let schema = schemas.get_mut(current_type).unwrap();
+						schema["properties"]
+							.as_object_mut()
+							.unwrap()
+							.insert(field.name.clone(), json!({"type": "array", "items": type_schema }));
+					}
+				}
+
+				is_custom_type if is_array && !is_custom_type => {
+					{
+						let mut schemas = schemas.borrow_mut();
+						let schema = schemas.get_mut(current_type).unwrap();
+
+						if !schema["properties"][&field.name].is_object() {
+							schema["properties"]
+								.as_object_mut()
+								.unwrap().insert(field.name.clone(), json!({ "type": "array", "items": {} }));
+						}
+
+						schema["properties"][&field.name]["items"]
+							.as_object_mut().unwrap().insert(field.name.clone(), json!({ "type": "string" }));
+					}
+					// use the appropriate type
+				}
+
+				is_custom_type if !is_array && !is_custom_type => {
+					{
+						let mut schemas = schemas.borrow_mut();
+						let schema = schemas.get_mut(current_type).unwrap();
+
+						schema["properties"]
+							.as_object_mut().unwrap().insert(field.name.clone(), json!({ "type": "string" }));
+					}
+					// use the appropriate type
+				}
+
+				_ => {}
+			}
+			{
+				let mut schemas = schemas.borrow_mut();
+				let schema = schemas.get_mut(current_type).unwrap();
+				schema["required"].as_array_mut().unwrap().push(json!(field.name));
+			}
+		}
+	}
+
+	let mut schemas_mut =  schemas.borrow_mut();
+	let schema = schemas_mut.remove(&*data.primary_type).unwrap();
+
+	println!("{:#?}", schema);
+
+	return Ok(schema)
 }
 
 /// encodes and hashes the given EIP712 struct
 pub fn hash_data(typed_data: EIP712) -> Result<Vec<u8>> {
 	// json schema validation logic!
 	// EIP-191 compliant
-	validate(&typed_data)?;
+	// validate(&typed_data)?;
 	let prefix = (b"\x19\x01").to_vec();
 	let (domain_hash, data_hash) = (
 		keccak(encode_data("EIP712Domain", &typed_data.types, &typed_data.domain)?).0,
@@ -198,6 +312,13 @@ pub fn hash_data(typed_data: EIP712) -> Result<Vec<u8>> {
 mod tests {
 	use super::*;
 	use serde_json::from_str;
+
+	#[test]
+	fn test_valico() {
+		let typed_data = from_str::<EIP712>(JSON).expect("alas error!");
+
+		build_schema(&typed_data);
+	}
 
 	const JSON: &'static str = r#"{
 		"primaryType": "Mail",

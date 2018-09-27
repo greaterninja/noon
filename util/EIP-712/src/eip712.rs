@@ -16,6 +16,8 @@
 
 use serde_json::{Value};
 use std::collections::HashMap;
+use serde::de;
+use std::fmt;
 
 pub(crate) type MessageTypes = HashMap<String, Vec<FieldType>>;
 
@@ -32,9 +34,37 @@ pub struct EIP712 {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct FieldType {
+	#[serde(deserialize_with = "deserialize_field_type_name")]
 	pub name: String,
 	#[serde(rename = "type")]
 	pub type_: String
+}
+
+fn deserialize_field_type_name<'de, D>(deserializer: D) -> Result<String, D::Error>
+	where
+		D: de::Deserializer<'de>,
+{
+	// define a visitor that deserializes
+	// `ActualData` encoded as json within a string
+	struct JsonStringVisitor;
+
+	impl<'de> de::Visitor<'de> for JsonStringVisitor {
+		type Value = String;
+
+		fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+			formatter.write_str("a string containing json data")
+		}
+
+		fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+			where
+				E: de::Error,
+		{
+			Ok(v.to_owned())
+		}
+	}
+
+	// use our visitor to deserialize an `ActualValue`
+	deserializer.deserialize_any(JsonStringVisitor)
 }
 
 #[cfg(test)]

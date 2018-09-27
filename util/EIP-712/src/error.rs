@@ -41,7 +41,10 @@ pub enum ErrorKind {
 	HexParseError(String),
 	/// the field was declared with a unknown type
 	#[fail(display = "The field {} has an unknown type {}", _0, _1)]
-	UnknownType(String, String)
+	UnknownType(String, String),
+	/// the array type had an
+	#[fail(display = "The field {} has a closing ']' but not an opening '['", _0)]
+	ArrayParseError(String)
 }
 
 pub(crate) fn serde_error(expected: &str, field: &str) -> ErrorKind {
