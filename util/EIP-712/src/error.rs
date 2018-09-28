@@ -28,22 +28,22 @@ pub struct Error {
 pub enum ErrorKind {
 	/// if we fail to deserialize from a serde::Value as a type specified in message types
 	/// fail with this error.
-	#[fail(display = "Expected type {} for field {}", _0, _1)]
+	#[fail(display = "Expected type '{}' for field '{}'", _0, _1)]
 	UnexpectedType(String, String),
 	/// the primary type supplied doesn't exist in the MessageTypes
 	#[fail(display = "The given primaryType wasn't found in the types field")]
 	NonExistentType,
 	/// an invalid address was encountered during encoding
-	#[fail(display = "Address string should be a 0x-prefixed 40 character string, got {}", _0)]
+	#[fail(display = "Address string should be a 0x-prefixed 40 character string, got '{}'", _0)]
 	InvalidAddressLength(usize),
 	/// a hex parse error occured
-	#[fail(display = "Failed to parse hex {}", _0)]
+	#[fail(display = "Failed to parse hex '{}'", _0)]
 	HexParseError(String),
 	/// the field was declared with a unknown type
-	#[fail(display = "The field {} has an unknown type {}", _0, _1)]
+	#[fail(display = "The field '{}' has an unknown type '{}'", _0, _1)]
 	UnknownType(String, String),
 	/// the array type had an
-	#[fail(display = "The field {} has a closing ']' but not an opening '['", _0)]
+	#[fail(display = "The field '{}' has a closing ']' but not an opening '['", _0)]
 	ArrayParseError(String),
 	/// schema validation error
 	#[fail(display = "{}", _0)]
