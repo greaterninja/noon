@@ -14,11 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with Parity.  If not, see <http://www.gnu.org/licenses/>.
 
-//! EIP-712 encoding, signining utilities
+//! EIP-712 encoding utilities
 #![warn(missing_docs, unused_extern_crates)]
 
 extern crate serde;
-#[macro_use]
 extern crate serde_json;
 extern crate ethabi;
 extern crate ethereum_types;
@@ -27,6 +26,7 @@ extern crate itertools;
 extern crate failure;
 extern crate valico;
 extern crate linked_hash_set;
+extern crate regex;
 #[macro_use]
 extern crate failure_derive;
 #[macro_use]
@@ -39,9 +39,10 @@ extern crate hex;
 
 mod eip712;
 mod error;
-
+mod schema;
 pub use error::*;
 pub use eip712::*;
+use schema::*;
 
 use ethabi::{encode, Token};
 use ethereum_types::{Address, U256, H256};
@@ -50,15 +51,28 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::str::FromStr;
 use itertools::Itertools;
-use std::collections::HashMap;
 use linked_hash_set::LinkedHashSet;
+use serde_json::to_value;
 
 
 lazy_static! {
     static ref INT_TYPES: HashSet<&'static str> = vec![
-        "int", "int8", "int16", "int32", "int64", "int128", "int256",
-        "uint", "uint8", "uint16", "uint32", "uint64", "uint128", "uint256"
+        "int8", "int16", "int24", "int32", "int40", "int48", "int56", "int64", "int72", "int80",
+        "int88", "int96", "int104", "int112", "int120", "int128", "int136", "int144", "int152", "int160",
+        "int168", "int176", "int184", "int192", "int200", "int208", "int216", "int224", "int232", "int240",
+        "int248", "int256", "uint8", "uint16", "uint24", "uint32", "uint40", "uint48", "uint56",
+        "uint64", "uint72", "uint80", "uint88", "uint96", "uint104", "uint112", "uint120", "uint128",
+        "uint136", "uint144", "uint152", "uint160", "uint168", "uint176", "uint184", "uint192", "uint200",
+        "uint208", "uint216", "uint224", "uint232", "uint240", "uint248", "uint256"
     ].into_iter().collect();
+
+	static ref BYTES_TYPES: HashSet<&'static str> = vec![
+		"bytes1", "bytes2", "bytes3", "bytes4", "bytes5", "bytes6", "bytes7", "bytes8",
+		"bytes9", "bytes10", "bytes11", "bytes12", "bytes13", "bytes14", "bytes15", "bytes16", "bytes17",
+		"bytes18", "bytes19", "bytes20", "bytes21", "bytes22", "bytes23", "bytes24", "bytes25", "bytes26",
+		"bytes27", "bytes28", "bytes29", "bytes30", "bytes31", "bytes32"
+	].into_iter().collect();
+
 }
 
 
@@ -169,11 +183,28 @@ fn encode_data(message_type: &str, message_types: &MessageTypes, message: &Value
 
 fn encode_primitive(field_type: &str, field_name: &str, value: &Value) -> Result<Token> {
 	match field_type {
-		"bytes32" => {
+		"bytes" => {
 			let string = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
+			if string.len() <= 2 {
+				return Err(ErrorKind::HexParseError(
+					format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
+				)?
+			}
+			let string = string.get(2..).expect("line 188 checks for length");
 			let bytes = H256::from_str(string).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
 			let hash = (&keccak(&bytes)).to_vec();
 			return Ok(Token::FixedBytes(hash));
+		}
+		ty if BYTES_TYPES.contains(ty) => {
+			let string = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
+			if string.len() <= 2 {
+				return Err(ErrorKind::HexParseError(
+					format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
+				)?
+			}
+			let string = string.get(2..).expect("line 188 checks for length");
+			let bytes = H256::from_str(string).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
+			return Ok(Token::FixedBytes(bytes.to_vec()));
 		}
 		"string" => {
 			let value = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
@@ -197,6 +228,12 @@ fn encode_primitive(field_type: &str, field_name: &str, value: &Value) -> Result
 			let uint = match (value.as_u64(), value.as_str()) {
 				(Some(number), _) => U256::from(number),
 				(_, Some(string)) => {
+					if string.len() <= 2 {
+						return Err(ErrorKind::HexParseError(
+							format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
+						)?
+					}
+					let string = string.get(2..).expect("line 200 checks for length");
 					U256::from_str(string).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?
 				}
 				_ => return Err(serde_error("int/uint", field_name))?
@@ -208,81 +245,15 @@ fn encode_primitive(field_type: &str, field_name: &str, value: &Value) -> Result
 	}
 }
 
-fn get_json_type(field_type: &str) -> &'static str {
-	match field_type {
-		"bool" => "boolean",
-		_ => "string"
-	}
-}
-
-fn build_schema(data: &EIP712) -> Result<Value> {
-	let dependencies = build_dependencies(&data.primary_type, &data.types)
-		.ok_or_else(|| ErrorKind::NonExistentType)?
-		.into_iter()
-		.collect::<Vec<_>>();
-
-	let mut schemas = dependencies
-		.into_iter()
-		.rfold(HashMap::new(), |mut schemas, current_type| {
-			let fields = data.types.get(current_type).unwrap();
-			let schema = json!({ "type": "object", "required": [], "properties": {} });
-			schemas.insert(current_type, schema);
-
-			for field in fields {
-				let is_array = field.type_.len() > 1 && field.type_.rfind(']') == Some(field.type_.len() - 1);
-
-				if data.types.contains_key(&*field.type_) {
-					if is_array {
-						let type_schema = schemas.get(&*field.type_).unwrap().clone();
-						let schema = schemas.get_mut(current_type).unwrap();
-						schema["properties"]
-							.as_object_mut()
-							.unwrap()
-							.insert(field.name.clone(), json!({"type": "array", "items": type_schema }));
-					} else {
-						let type_schema = schemas.get(&*field.type_).unwrap().clone();
-						let mut schema = schemas.get_mut(current_type).unwrap();
-						schema["properties"].as_object_mut().unwrap().insert(field.name.clone(), type_schema);
-					}
-				} else {
-					if is_array {
-						let schema = schemas.get_mut(current_type).unwrap();
-
-						if !schema["properties"][&field.name].is_object() {
-							schema["properties"]
-								.as_object_mut()
-								.unwrap().insert(field.name.clone(), json!({ "type": "array", "items": {} }));
-						}
-
-						schema["properties"][&field.name]["items"]
-							.as_object_mut().unwrap().insert(field.name.clone(), json!({ "type": get_json_type(&field.type_) }));
-					} else {
-						let schema = schemas.get_mut(current_type).unwrap();
-
-						schema["properties"]
-							.as_object_mut().unwrap().insert(field.name.clone(),json!({ "type": get_json_type(&field.type_) }));
-					}
-				}
-				// add field names to the required array.
-				let schema = schemas.get_mut(current_type).unwrap();
-				schema["required"].as_array_mut().unwrap().push(json!(field.name));
-			}
-
-			schemas
-		});
-
-	let schema = schemas.remove(&*data.primary_type).unwrap();
-	return Ok(schema);
-}
-
 /// encodes and hashes the given EIP712 struct
 pub fn hash_data(typed_data: EIP712) -> Result<Vec<u8>> {
-	// json schema validation logic!
+	// json schema validation
+	validate_data(&typed_data)?;
 	// EIP-191 compliant
-	// validate(&typed_data)?;
 	let prefix = (b"\x19\x01").to_vec();
+	let domain = to_value(&typed_data.domain).unwrap();
 	let (domain_hash, data_hash) = (
-		keccak(encode_data("EIP712Domain", &typed_data.types, &typed_data.domain)?).0,
+		keccak(encode_data("EIP712Domain", &typed_data.types, &domain)?).0,
 		keccak(encode_data(&typed_data.primary_type, &typed_data.types, &typed_data.message)?).0
 	);
 	let concat = [&prefix[..], &domain_hash[..], &data_hash[..]].concat();
@@ -298,7 +269,7 @@ mod tests {
 	fn test_valico() {
 		let typed_data = from_str::<EIP712>(JSON).expect("alas error!");
 
-		build_schema(&typed_data);
+		validate_data(&typed_data).unwrap();
 	}
 
 	const JSON: &'static str = r#"{
@@ -306,7 +277,7 @@ mod tests {
 		"domain": {
 			"name": "Ether Mail",
 			"version": "1",
-			"chainId": 1,
+			"chainId": "0x1",
 			"verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
 		},
 		"message": {

@@ -18,9 +18,26 @@ use serde_json::{Value};
 use std::collections::HashMap;
 use serde::de;
 use std::fmt;
+use ethereum_types::{U256, H256, Address};
+use regex::Regex;
 
 pub(crate) type MessageTypes = HashMap<String, Vec<FieldType>>;
 
+lazy_static! {
+	static ref RE: Regex = Regex::new(r"[a-zA-z](\[(([1-9][0-9])*)?\]+)?(([1-9][0-9])*)?").unwrap();
+}
+
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub(crate) struct EIP712Domain {
+	pub(crate) name: String,
+	pub(crate) version: String,
+	pub(crate) chain_id: U256,
+	pub(crate) verifying_contract: Address,
+	#[serde(skip_serializing_if="Option::is_none")]
+	pub(crate) salt: Option<H256>,
+}
 /// EIP-712 struct
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
@@ -29,7 +46,7 @@ pub struct EIP712 {
 	pub(crate) types: MessageTypes,
 	pub(crate) primary_type: String,
 	pub(crate) message: Value,
-	pub(crate) domain: Value,
+	pub(crate) domain: EIP712Domain,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -44,11 +61,9 @@ fn deserialize_field_type_name<'de, D>(deserializer: D) -> Result<String, D::Err
 	where
 		D: de::Deserializer<'de>,
 {
-	// define a visitor that deserializes
-	// `ActualData` encoded as json within a string
-	struct JsonStringVisitor;
+	struct FieldTypeNameVisitor;
 
-	impl<'de> de::Visitor<'de> for JsonStringVisitor {
+	impl<'de> de::Visitor<'de> for FieldTypeNameVisitor {
 		type Value = String;
 
 		fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -59,12 +74,14 @@ fn deserialize_field_type_name<'de, D>(deserializer: D) -> Result<String, D::Err
 			where
 				E: de::Error,
 		{
+			if !RE.is_match(v) {
+				return Err(E::custom(format!("Invalid type definition {}", v)))
+			}
 			Ok(v.to_owned())
 		}
 	}
 
-	// use our visitor to deserialize an `ActualValue`
-	deserializer.deserialize_any(JsonStringVisitor)
+	deserializer.deserialize_any(FieldTypeNameVisitor)
 }
 
 #[cfg(test)]
@@ -78,7 +95,7 @@ mod tests {
 			"domain": {
 				"name": "Ether Mail",
 				"version": "1",
-				"chainId": 1,
+				"chainId": "0x1",
 				"verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
 			},
 			"message": {

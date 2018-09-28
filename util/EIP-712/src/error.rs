@@ -44,7 +44,10 @@ pub enum ErrorKind {
 	UnknownType(String, String),
 	/// the array type had an
 	#[fail(display = "The field {} has a closing ']' but not an opening '['", _0)]
-	ArrayParseError(String)
+	ArrayParseError(String),
+	/// schema validation error
+	#[fail(display = "{}", _0)]
+	SchemaValidationError(String)
 }
 
 pub(crate) fn serde_error(expected: &str, field: &str) -> ErrorKind {
