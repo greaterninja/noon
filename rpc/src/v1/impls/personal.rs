@@ -154,7 +154,7 @@ impl<D: Dispatcher + 'static> Personal for PersonalClient<D> {
 	fn sign_typed_data(&self, typed_data: EIP712, account: RpcH160, password: String) -> BoxFuture<RpcH520> {
 		let data = match hash_data(typed_data) {
 			Ok(d) => d,
-			Err(err) => return Box::new(future::done(Err(errors::invalid_call_data(err)))),
+			Err(err) => return Box::new(future::done(Err(errors::invalid_call_data(err.kind())))),
 		};
 		let dispatcher = self.dispatcher.clone();
 		let accounts = self.accounts.clone();

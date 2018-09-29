@@ -190,7 +190,7 @@ fn encode_primitive(field_type: &str, field_name: &str, value: &Value) -> Result
 					format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
 				)?
 			}
-			let string = string.get(2..).expect("line 188 checks for length");
+			let string = string.get(2..).expect("line 188 checks for length; qed");
 			let bytes = H256::from_str(string).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
 			let hash = (&keccak(&bytes)).to_vec();
 			return Ok(Token::FixedBytes(hash));
@@ -202,7 +202,7 @@ fn encode_primitive(field_type: &str, field_name: &str, value: &Value) -> Result
 					format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
 				)?
 			}
-			let string = string.get(2..).expect("line 188 checks for length");
+			let string = string.get(2..).expect("line 200 checks for length; qed");
 			let bytes = H256::from_str(string).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
 			return Ok(Token::FixedBytes(bytes.to_vec()));
 		}
