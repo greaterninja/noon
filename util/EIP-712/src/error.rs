@@ -56,8 +56,8 @@ pub enum ErrorKind {
 	UnsupportedArrayDepth
 }
 
-pub(crate) fn serde_error(expected: &str, field: &str) -> ErrorKind {
-	ErrorKind::UnexpectedType(expected.to_owned(), field.to_owned())
+pub(crate) fn serde_error(expected: &str, field: Option<&str>) -> ErrorKind {
+	ErrorKind::UnexpectedType(expected.to_owned(), field.unwrap_or("").to_owned())
 }
 
 

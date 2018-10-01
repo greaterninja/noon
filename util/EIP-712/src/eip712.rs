@@ -23,7 +23,6 @@ use ethereum_types::{U256, H256, Address};
 
 pub(crate) type MessageTypes = HashMap<String, Vec<FieldType>>;
 
-
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 #[derive(Deserialize, Serialize, Debug, Clone)]
