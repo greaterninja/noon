@@ -14,18 +14,15 @@
 // You should have received a copy of the GNU General Public License
 // along with Parity.  If not, see <http://www.gnu.org/licenses/>.
 
+//! EIP712 structs
+//!
+
 use serde_json::{Value};
 use std::collections::HashMap;
-use serde::de;
-use std::fmt;
 use ethereum_types::{U256, H256, Address};
-use regex::Regex;
 
 pub(crate) type MessageTypes = HashMap<String, Vec<FieldType>>;
 
-lazy_static! {
-	static ref RE: Regex = Regex::new(r"[a-zA-z](\[(([1-9][0-9])*)?\]+)?(([1-9][0-9])*)?").unwrap();
-}
 
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
@@ -51,37 +48,9 @@ pub struct EIP712 {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct FieldType {
-	#[serde(deserialize_with = "deserialize_field_type_name")]
 	pub name: String,
 	#[serde(rename = "type")]
-	pub type_: String
-}
-
-fn deserialize_field_type_name<'de, D>(deserializer: D) -> Result<String, D::Error>
-	where
-		D: de::Deserializer<'de>,
-{
-	struct FieldTypeNameVisitor;
-
-	impl<'de> de::Visitor<'de> for FieldTypeNameVisitor {
-		type Value = String;
-
-		fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-			formatter.write_str("a string containing json data")
-		}
-
-		fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-			where
-				E: de::Error,
-		{
-			if !RE.is_match(v) {
-				return Err(E::custom(format!("Invalid type definition {}", v)))
-			}
-			Ok(v.to_owned())
-		}
-	}
-
-	deserializer.deserialize_any(FieldTypeNameVisitor)
+	pub type_: String,
 }
 
 #[cfg(test)]

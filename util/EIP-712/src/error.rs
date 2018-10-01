@@ -47,7 +47,13 @@ pub enum ErrorKind {
 	ArrayParseError(String),
 	/// schema validation error
 	#[fail(display = "{}", _0)]
-	SchemaValidationError(String)
+	SchemaValidationError(String),
+	/// Unexpected token
+	#[fail(display = "Unexpected token '{}' while parsing typename '{}'", _0, _1)]
+	UnexpectedToken(String, String),
+	/// the user has attempted to define an typed array with a depth > 10
+	#[fail(display = "Maximum depth for nested arrays is 10")]
+	UnsupportedArrayDepth
 }
 
 pub(crate) fn serde_error(expected: &str, field: &str) -> ErrorKind {
