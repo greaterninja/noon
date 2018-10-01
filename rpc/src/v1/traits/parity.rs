@@ -224,7 +224,8 @@ build_rpc_trait! {
 		#[rpc(name = "parity_call")]
 		fn call(&self, Vec<CallRequest>, Trailing<BlockNumber>) -> Result<Vec<Bytes>>;
 
-		/// ecrecover signature
+		/// Extracts Address and public key from signature using the r, s and v params. Equivalent to Solidity erecover
+		/// as well as checks the signature for chain replay protection
 		#[rpc(name = "parity_verifySignature")]
 		fn verify_signature(&self, bool, Bytes, H256, H256, U64) -> Result<BasicAccount>;
 	}
