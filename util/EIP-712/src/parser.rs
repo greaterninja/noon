@@ -21,10 +21,11 @@ use lunarity::lexer::Token;
 use error::*;
 use toolshed::Arena;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
 	Address,
 	Uint,
+	Int,
 	String,
 	Bool,
 	Bytes(u8),
@@ -37,6 +38,7 @@ impl From<Type> for String {
 		match field_type {
 			Type::Address => "address".into(),
 			Type::Uint => "uint".into(),
+			Type::Int => "int".into(),
 			Type::String => "string".into(),
 			Type::Bool => "bool".into(),
 			Type::Bytes(len) => format!("bytes{}", len),
@@ -76,7 +78,7 @@ impl Parser {
 				Token::TypeByte => Type::Bytes(lexer.type_size.0),
 				Token::TypeBool => Type::Bool,
 				Token::TypeUint => Type::Uint,
-				Token::TypeInt => Type::Uint,
+				Token::TypeInt => Type::Int,
 				Token::TypeString => Type::String,
 				Token::TypeAddress => Type::Address,
 				Token::LiteralInteger => {

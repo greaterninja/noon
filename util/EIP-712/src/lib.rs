@@ -191,7 +191,7 @@ fn encode_data(
 			encode(&[EthAbiToken::Address(address)])
 		}
 
-		Type::Uint => {
+		Type::Uint | Type::Int => {
 			// try to deserialize as a number first, then a string
 			let uint = match (value.as_u64(), value.as_str()) {
 				(Some(number), _) => U256::from(number),
@@ -206,7 +206,12 @@ fn encode_data(
 				}
 				_ => return Err(serde_error("int/uint", field_name))?
 			};
-			encode(&[EthAbiToken::Uint(uint)])
+			let token = if message_type == Type::Uint {
+				EthAbiToken::Uint(uint)
+			} else {
+				EthAbiToken::Int(uint)
+			};
+			encode(&[token])
 		}
 
 		_ => return Err(ErrorKind::UnknownType("".to_owned(), message_type.into()))?
@@ -217,7 +222,6 @@ fn encode_data(
 
 /// encodes and hashes the given EIP712 struct
 pub fn hash_data(typed_data: EIP712) -> Result<Vec<u8>> {
-	// json schema validation
 	// EIP-191 compliant
 	let prefix = (b"\x19\x01").to_vec();
 	let domain = to_value(&typed_data.domain).unwrap();
