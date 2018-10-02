@@ -16,12 +16,19 @@
 
 //! EIP712 structs
 //!
-
 use serde_json::{Value};
+use serde::de;
+use std::fmt;
 use std::collections::HashMap;
 use ethereum_types::{U256, H256, Address};
+use regex::Regex;
 
 pub(crate) type MessageTypes = HashMap<String, Vec<FieldType>>;
+
+lazy_static! {
+	// match solidity identifier with the addition of '[' & ']'
+	static ref TYPE_REGEX: Regex = Regex::new(r"^[a-zA-Z_$][a-zA-Z_$0-9\[\]]*$").unwrap();
+}
 
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
@@ -47,15 +54,61 @@ pub struct EIP712 {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct FieldType {
+	#[serde(deserialize_with = "deserialize_ident")]
 	pub name: String,
 	#[serde(rename = "type")]
+	#[serde(deserialize_with = "deserialize_ident")]
 	pub type_: String,
 }
+
+
+fn deserialize_ident<'de, D>(deserializer: D) -> Result<String, D::Error>
+	where
+		D: de::Deserializer<'de>,
+{
+	struct FieldNameVisitor;
+
+	impl<'de> de::Visitor<'de> for FieldNameVisitor {
+		type Value = String;
+
+		fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+			formatter.write_str("A valid solidity identifier")
+		}
+
+		fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+			where
+				E: de::Error,
+		{
+			if !TYPE_REGEX.is_match(v) {
+				return Err(E::custom(format!("Invalid Identifier '{}'", v)))
+			}
+
+			Ok(v.to_owned())
+		}
+	}
+
+	deserializer.deserialize_any(FieldNameVisitor)
+}
+
 
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use serde_json::from_str;
+
+	#[test]
+	fn test_ident_regex() {
+		let test_cases = vec!["unint bytes32", "Seun\\[]", ""];
+		for case in test_cases {
+			assert_eq!(TYPE_REGEX.is_match(case), false)
+		}
+
+		let test_cases = vec!["bytes32", "Foo[]", "bytes1", "bytes32[][]"];
+		for case in test_cases {
+			assert_eq!(TYPE_REGEX.is_match(case), true)
+		}
+	}
+
 	#[test]
 	fn test_deserialization() {
 		let string = r#"{

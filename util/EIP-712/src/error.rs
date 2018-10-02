@@ -60,7 +60,6 @@ pub(crate) fn serde_error(expected: &str, field: Option<&str>) -> ErrorKind {
 	ErrorKind::UnexpectedType(expected.to_owned(), field.unwrap_or("").to_owned())
 }
 
-
 impl Fail for Error {
 	fn cause(&self) -> Option<&Fail> {
 		self.inner.cause()
