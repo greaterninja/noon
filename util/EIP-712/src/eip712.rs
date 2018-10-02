@@ -15,7 +15,6 @@
 // along with Parity.  If not, see <http://www.gnu.org/licenses/>.
 
 //! EIP712 structs
-//!
 use serde_json::{Value};
 use serde::de;
 use std::fmt;
@@ -61,7 +60,6 @@ pub(crate) struct FieldType {
 	pub type_: String,
 }
 
-
 fn deserialize_ident<'de, D>(deserializer: D) -> Result<String, D::Error>
 	where
 		D: de::Deserializer<'de>,
@@ -89,7 +87,6 @@ fn deserialize_ident<'de, D>(deserializer: D) -> Result<String, D::Error>
 
 	deserializer.deserialize_any(FieldNameVisitor)
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -15,7 +15,6 @@
 // along with Parity.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Solidity type-name parsing
-//!
 use lunarity::lexer::Lexer;
 use lunarity::lexer::Token;
 use error::*;

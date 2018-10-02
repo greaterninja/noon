@@ -125,7 +125,7 @@ fn encode_data(
 
 		Type::Bytes(size) if *size == 32 => {
 			let string = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
-			if string.len() <= 2 {
+			if string.len() < 2 {
 				return Err(ErrorKind::HexParseError(
 					format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
 				)?
@@ -138,7 +138,7 @@ fn encode_data(
 
 		Type::Bytes(size) if *size < 32 => {
 			let string = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
-			if string.len() <= 2 {
+			if string.len() < 2 {
 				return Err(ErrorKind::HexParseError(
 					format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
 				)?
@@ -172,7 +172,7 @@ fn encode_data(
 			let uint = match (value.as_u64(), value.as_str()) {
 				(Some(number), _) => U256::from(number),
 				(_, Some(string)) => {
-					if string.len() <= 2 {
+					if string.len() < 2 {
 						return Err(ErrorKind::HexParseError(
 							format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
 						)?
