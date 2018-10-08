@@ -94,7 +94,7 @@ fn encode_data(
 	message_type: &Type,
 	message_types: &MessageTypes,
 	value: &Value,
-	field_name: Option<&str>
+	field_name: Option<&str>,
 ) -> Result<Vec<u8>>
 {
 	let encoded = match message_type {
@@ -128,7 +128,7 @@ fn encode_data(
 			if string.len() < 2 {
 				return Err(ErrorKind::HexParseError(
 					format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
-				)?
+				)?;
 			}
 			let string = string.get(2..).expect("line 188 checks for length; qed");
 			let bytes = H256::from_str(string).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
@@ -141,7 +141,7 @@ fn encode_data(
 			if string.len() < 2 {
 				return Err(ErrorKind::HexParseError(
 					format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
-				)?
+				)?;
 			}
 			let string = string.get(2..).expect("line 200 checks for length; qed");
 			let bytes = H256::from_str(string).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
@@ -175,7 +175,7 @@ fn encode_data(
 					if string.len() < 2 {
 						return Err(ErrorKind::HexParseError(
 							format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
-						)?
+						)?;
 					}
 					let string = string.get(2..).expect("line 200 checks for length");
 					U256::from_str(string).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?
@@ -191,14 +191,17 @@ fn encode_data(
 			encode(&[token])
 		}
 
-		_ => return Err(ErrorKind::UnknownType("".to_owned(), (*message_type).clone().into()))?
+		_ => return Err(ErrorKind::UnknownType(
+			field_name.unwrap_or("").to_owned(),
+			(*message_type).clone().into(),
+		))?
 	};
 
 	Ok(encoded)
 }
 
 /// encodes and hashes the given EIP712 struct
-pub fn hash_structured_data(typed_data: EIP712) -> Result<Vec<u8>> {
+pub fn hash_structured_data(typed_data: EIP712) -> Result<H256> {
 	// EIP-191 compliant
 	let prefix = (b"\x19\x01").to_vec();
 	let domain = to_value(&typed_data.domain).unwrap();
@@ -208,7 +211,7 @@ pub fn hash_structured_data(typed_data: EIP712) -> Result<Vec<u8>> {
 		encode_data(&parser, &Type::Custom(typed_data.primary_type), &typed_data.types, &typed_data.message, None)?
 	);
 	let concat = [&prefix[..], &domain_hash[..], &data_hash[..]].concat();
-	Ok((&keccak(concat)).to_vec())
+	Ok(keccak(concat))
 }
 
 #[cfg(test)]
