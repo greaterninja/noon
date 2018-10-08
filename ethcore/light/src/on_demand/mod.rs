@@ -70,10 +70,11 @@ pub mod error {
 
 		errors {
 			#[doc = "Request was faulty"]
-			FaultyRequest(bad_responses: usize, num_providers: usize) {
-				description("Majority of the providers found the request faulty")
-				display("#{} peers of #{} total peers found the request faulty", bad_responses, num_providers)
+			FaultyRequest(req_id: super::ReqId, bad_responses: usize, num_providers: usize) {
+				description("Faulty request found")
+				display("The request: {} was determined as faulty, {}/{} peer(s) gave bad response", req_id, bad_responses, num_providers)
 			}
+
 			#[doc = "Max number of on-demand query attempts reached without result."]
 			MaxAttemptReach(query_index: usize) {
 				description("On-demand query limit reached")
@@ -128,11 +129,11 @@ struct Pending {
 	net_requests: basic_request::Batch<NetworkRequest>,
 	required_capabilities: Capabilities,
 	responses: Vec<Response>,
-        /// This will collect how many bad responses we get from each peer per request
-        /// When we get `|bad_responses| > peers / 2` then regard the reques as `faulty`
-        /// This, can happen for several reasons such as a request for a hash that doesn't exist
-        pub bad_responses: HashSet<PeerId>,
 	sender: oneshot::Sender<PendingResponse>,
+	// This will collect how many bad responses we get from each peer per request
+	// When we get `|bad_responses| > peers / 2` then regard the reques as `faulty`
+	// This, can happen for several reasons such as a request for a hash that doesn't exist
+	bad_responses: HashSet<PeerId>,
 	base_query_index: usize,
 	remaining_query_count: usize,
 	query_id_history: BTreeSet<PeerId>,
@@ -236,6 +237,14 @@ impl Pending {
 		self.required_capabilities = capabilities;
 	}
 
+	fn add_bad_response(&mut self, peer: PeerId) {
+		self.bad_responses.insert(peer);
+	}
+
+	fn is_bad_response(&self, total_peers: usize) -> bool {
+		self.bad_responses.len() > total_peers / 2
+	}
+
 	// returning no reponse, it will result in an error.
 	// self is consumed on purpose.
 	fn no_response(self) {
@@ -254,11 +263,12 @@ impl Pending {
 			debug!(target: "on_demand", "Dropped oneshot channel receiver on time out");
 		}
 	}
-
+	
 	// returning a faulty request error
-	fn is_faulty_request(self, bad_peers: usize, total_peers: usize) {
-		warn!(target: "on_demand", "dropping request: majority of the providers could not prove it");
-		let err = self::error::ErrorKind::FaultyRequest(bad_peers, total_peers);
+	fn set_as_faulty_request(self, total_peers: usize, req_id: ReqId) {
+		let bad_peers = self.bad_responses.len();
+		warn!(target: "on_demand", "The request: {} was determined as faulty, {}/{} peer(s) gave bad response", req_id, bad_peers, total_peers);
+		let err = self::error::ErrorKind::FaultyRequest(req_id, bad_peers, total_peers);
 		if self.sender.send(Err(err.into())).is_err() {
 			debug!(target: "on_demand", "Dropped oneshot channel receiver on time out");
 		}
@@ -421,7 +431,7 @@ impl OnDemand {
 			required_capabilities: capabilities,
 			responses,
 			sender,
-                        bad_responses: HashSet::new(),
+			bad_responses: HashSet::new(),
 			base_query_index: 0,
 			remaining_query_count: 0,
 			query_id_history: BTreeSet::new(),
@@ -628,19 +638,20 @@ impl Handler for OnDemand {
 		//   3. if extracted on-demand response, keep it for later.
 		for response in responses {
 			trace!(target: "on_demand", "got a response: {} {:?}", req_id, response);
-			if let Err(e) = pending.supply_response(&*self.cache, response) {
-                            trace!(target: "on_demand", "req_id: {} was err {:?}", req_id, e);
-			    let peer = ctx.peer();
-                            pending.bad_responses.insert(peer);
-                            
-                            let bad_peers = pending.bad_responses.len();
-                            let total_peers = self.peers.read().len();
 
-                            if bad_peers > total_peers / 2 {
-                                pending.is_faulty_request(bad_peers, total_peers);
-                                return;
-                            }
-                        }
+			// this does not punish a peer with bad response anymore because
+			// we can't actually tell whether the request or the provider was faulty
+			// so let's rely on the majority of the network instead
+			if let Err(e) = pending.supply_response(&*self.cache, response) {
+				let peer = ctx.peer();
+				trace!(target: "on_demand", "Peer {} gave bad response on req_id: {} because of: {:?}", peer, req_id, e);
+				pending.add_bad_response(peer);
+				let total_peers = self.peers.read().len();
+				if pending.is_bad_response(total_peers) {
+					pending.set_as_faulty_request(total_peers, req_id);
+					return;
+				}
+			}
 		}
 
 		pending.fill_unanswered();
