@@ -953,15 +953,15 @@ impl LightProtocol {
 		let responses = requests.respond_to_all(|complete_req| {
 			let _timer = self.load_distribution.begin_timer(&complete_req);
 			match complete_req {
-				CompleteRequest::Headers(req) => self.provider.block_headers(req).map(Response::Headers),
+				CompleteRequest::Headers(req) => Some(Response::Headers(self.provider.block_headers(req))),
 				CompleteRequest::HeaderProof(req) => self.provider.header_proof(req).map(Response::HeaderProof),
-				CompleteRequest::TransactionIndex(req) => self.provider.transaction_index(req).map(Response::TransactionIndex),
+				CompleteRequest::TransactionIndex(req) => Some(Response::TransactionIndex(self.provider.transaction_index(req))),
 				CompleteRequest::Body(req) => self.provider.block_body(req).map(Response::Body),
 				CompleteRequest::Receipts(req) => self.provider.block_receipts(req).map(Response::Receipts),
 				CompleteRequest::Account(req) => self.provider.account_proof(req).map(Response::Account),
 				CompleteRequest::Storage(req) => self.provider.storage_proof(req).map(Response::Storage),
 				CompleteRequest::Code(req) => self.provider.contract_code(req).map(Response::Code),
-				CompleteRequest::Execution(req) => self.provider.transaction_proof(req).map(Response::Execution),
+				CompleteRequest::Execution(req) => Some(Response::Execution(self.provider.transaction_proof(req))),
 				CompleteRequest::Signal(req) => self.provider.epoch_signal(req).map(Response::Signal),
 			}
 		});

@@ -25,6 +25,7 @@ mod batch;
 pub use self::header::{
 	Complete as CompleteHeadersRequest,
 	Incomplete as IncompleteHeadersRequest,
+	IncompleteInner as IncompleteHeaderRequestInner,
 	Response as HeadersResponse
 };
 pub use self::header_proof::{
@@ -35,7 +36,8 @@ pub use self::header_proof::{
 pub use self::transaction_index::{
 	Complete as CompleteTransactionIndexRequest,
 	Incomplete as IncompleteTransactionIndexRequest,
-	Response as TransactionIndexResponse
+	Response as TransactionIndexResponse,
+	InnerResponse as TransactionIndexResponseInner,
 };
 pub use self::block_body::{
 	Complete as CompleteBodyRequest,
@@ -676,6 +678,13 @@ pub mod header {
 	/// Potentially incomplete headers request.
 	#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
 	pub struct Incomplete {
+		/// ....
+		 pub inner: Option<IncompleteInner>,
+	}
+
+        /// ....
+	#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
+	pub struct IncompleteInner {
 		/// Start block.
 		pub start: Field<HashOrNumber>,
 		/// Skip between.
@@ -693,36 +702,43 @@ pub mod header {
 		fn check_outputs<F>(&self, mut f: F) -> Result<(), NoSuchOutput>
 			where F: FnMut(usize, usize, OutputKind) -> Result<(), NoSuchOutput>
 		{
-			match self.start {
-				Field::Scalar(_) => Ok(()),
-				Field::BackReference(req, idx) =>
-					f(req, idx, OutputKind::Hash).or_else(|_| f(req, idx, OutputKind::Number))
+			match self.inner.as_ref().map(|s| &s.start) {
+				Some(Field::Scalar(_)) => Ok(()),
+				Some(Field::BackReference(req, idx)) => f(*req, *idx, OutputKind::Hash).or_else(|_| f(*req, *idx, OutputKind::Number)),
+                                _ => Err(NoSuchOutput),
 			}
 		}
 
 		fn note_outputs<F>(&self, _: F) where F: FnMut(usize, OutputKind) { }
 
 		fn fill<F>(&mut self, oracle: F) where F: Fn(usize, usize) -> Result<Output, NoSuchOutput> {
-			if let Field::BackReference(req, idx) = self.start {
-				self.start = match oracle(req, idx) {
+                        self.inner.as_mut().map(|s| {
+			    if let Field::BackReference(req, idx) = s.start {
+				s.start = match oracle(req, idx) {
 					Ok(Output::Hash(hash)) => Field::Scalar(hash.into()),
 					Ok(Output::Number(num)) => Field::Scalar(num.into()),
 					Err(_) => Field::BackReference(req, idx),
 				}
-			}
+			    }      
+                        });
 		}
 
 		fn complete(self) -> Result<Self::Complete, NoSuchOutput> {
+			let inner = match self.inner {
+				Some(inner) => inner,
+				None => return Err(NoSuchOutput),
+			};
+
 			Ok(Complete {
-				start: self.start.into_scalar()?,
-				skip: self.skip,
-				max: self.max,
-				reverse: self.reverse,
+				start: inner.start.into_scalar()?,
+				skip: inner.skip,
+				max: inner.max,
+				reverse: inner.reverse,
 			})
 		}
 
-		fn adjust_refs<F>(&mut self, mapping: F) where F: FnMut(usize) -> usize {
-			self.start.adjust_req(mapping)
+		fn adjust_refs<F>(&mut self, mapping: F) where F: FnMut(usize) -> usize {	
+                    self.inner.as_mut().map(|s| s.start.adjust_req(mapping));
 		}
 	}
 
@@ -883,7 +899,7 @@ pub mod transaction_index {
 	#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
 	pub struct Incomplete {
 		/// Transaction hash to get index for.
-		pub hash: Field<H256>,
+		pub hash: Option<Field<H256>>,
 	}
 
 	impl super::IncompleteRequest for Incomplete {
@@ -894,9 +910,10 @@ pub mod transaction_index {
 			where F: FnMut(usize, usize, OutputKind) -> Result<(), NoSuchOutput>
 		{
 			match self.hash {
-				Field::Scalar(_) => Ok(()),
-				Field::BackReference(req, idx) => f(req, idx, OutputKind::Hash),
-			}
+				Some(Field::Scalar(_)) => Ok(()),
+				Some(Field::BackReference(req, idx)) => f(req, idx, OutputKind::Hash),
+			        _ => Err(NoSuchOutput),
+                        }
 		}
 
 		fn note_outputs<F>(&self, mut f: F) where F: FnMut(usize, OutputKind) {
@@ -905,22 +922,25 @@ pub mod transaction_index {
 		}
 
 		fn fill<F>(&mut self, oracle: F) where F: Fn(usize, usize) -> Result<Output, NoSuchOutput> {
-			if let Field::BackReference(req, idx) = self.hash {
+			if let Some(Field::BackReference(req, idx)) = self.hash {
 				self.hash = match oracle(req, idx) {
-					Ok(Output::Number(hash)) => Field::Scalar(hash.into()),
-					_ => Field::BackReference(req, idx),
+					Ok(Output::Number(hash)) => Some(Field::Scalar(hash.into())),
+					_ => Some(Field::BackReference(req, idx)),
 				}
 			}
 		}
 
 		fn complete(self) -> Result<Self::Complete, NoSuchOutput> {
-			Ok(Complete {
-				hash: self.hash.into_scalar()?,
-			})
+			match self.hash.map(|h| h.into_scalar()) {
+				Some(Ok(hash)) => Ok(Complete { hash }),
+				_ => Err(NoSuchOutput)
+			}
 		}
 
 		fn adjust_refs<F>(&mut self, mapping: F) where F: FnMut(usize) -> usize {
-			self.hash.adjust_req(mapping)
+			self.hash
+				.as_mut()
+				.map(|h| h.adjust_req(mapping));
 		}
 	}
 
@@ -930,10 +950,10 @@ pub mod transaction_index {
 		/// The transaction hash to get index for.
 		pub hash: H256,
 	}
-
-	/// The output of a request for transaction index.
-	#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
-	pub struct Response {
+	
+        /// ....
+        #[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
+	pub struct InnerResponse {
 		/// Block number.
 		pub num: u64,
 		/// Block hash
@@ -942,11 +962,20 @@ pub mod transaction_index {
 		pub index: u64,
 	}
 
+	/// The output of a request for transaction index.
+	#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
+	pub struct Response {
+            /// ...
+            pub inner: Option<InnerResponse>,
+        }
+
 	impl super::ResponseLike for Response {
 		/// Fill reusable outputs by providing them to the function.
 		fn fill_outputs<F>(&self, mut f: F) where F: FnMut(usize, Output) {
-			f(0, Output::Number(self.num));
-			f(1, Output::Hash(self.hash));
+			self.inner.as_ref().map(|r| {
+				f(0, Output::Number(r.num));
+				f(1, Output::Hash(r.hash));
+			});
 		}
 	}
 }

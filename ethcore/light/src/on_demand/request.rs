@@ -265,20 +265,24 @@ impl From<Request> for CheckedRequest {
 		match req {
 			Request::HeaderByHash(req) => {
 				let net_req = net_request::IncompleteHeadersRequest {
-					start: req.0.map(Into::into),
-					skip: 0,
-					max: 1,
-					reverse: false,
+					inner: Some(net_request::IncompleteHeaderRequestInner {
+						start: req.0.map(Into::into),
+						skip: 0,
+						max: 1,
+						reverse: false,
+					}),
 				};
 				trace!(target: "on_demand", "HeaderByHash Request, {:?}", net_req);
 				CheckedRequest::HeaderByHash(req, net_req)
 			}
 			Request::HeaderWithAncestors(req) => {
 				let net_req = net_request::IncompleteHeadersRequest {
-					start: req.block_hash.map(Into::into),
-					skip: 0,
-					max: req.ancestor_count + 1,
-					reverse: true,
+					inner: Some(net_request::IncompleteHeaderRequestInner {
+						start: req.block_hash.map(Into::into),
+						skip: 0,
+						max: req.ancestor_count + 1,
+						reverse: true,
+					}),
 				};
 				trace!(target: "on_demand", "HeaderWithAncestors Request, {:?}", net_req);
 				CheckedRequest::HeaderWithAncestors(req, net_req)
@@ -292,7 +296,7 @@ impl From<Request> for CheckedRequest {
 			}
 			Request::TransactionIndex(req) => {
 				let net_req = net_request::IncompleteTransactionIndexRequest {
-					hash: req.0,
+					hash: Some(req.0),
 				};
 				trace!(target: "on_demand", "TransactionIndex Request, {:?}", net_req);
 				CheckedRequest::TransactionIndex(req, net_req)
@@ -409,32 +413,40 @@ impl CheckedRequest {
 					.map(|(h, s)| Response::HeaderProof((h, s)))
 			}
 			CheckedRequest::HeaderByHash(_, ref req) => {
-				if let Some(&net_request::HashOrNumber::Hash(ref h)) = req.start.as_ref() {
+				if let Some(Some(net_request::HashOrNumber::Hash(ref h))) = req.inner.as_ref().map(|s| s.start.as_ref()) {
 					return cache.lock().block_header(h).map(Response::HeaderByHash);
+				} else {
+					None
 				}
-
-				None
 			}
 			CheckedRequest::HeaderWithAncestors(_, ref req) => {
-				if req.skip != 1 || !req.reverse {
-					return None;
-				}
-
-				if let Some(&net_request::HashOrNumber::Hash(start)) = req.start.as_ref() {
-					let mut result = Vec::with_capacity(req.max as usize);
-					let mut hash = start;
-					let mut cache = cache.lock();
-					for _ in 0..req.max {
-						match cache.block_header(&hash) {
-							Some(header) => {
-								hash = header.parent_hash();
-								result.push(header);
-							}
-							None => return None,
-						}
+				let f = req.inner.as_ref().map(|r| {
+					if r.skip != 1 || !r.reverse {
+						return None;
 					}
-					Some(Response::HeaderWithAncestors(result))
-				} else { None }
+
+					if let Some(&net_request::HashOrNumber::Hash(start)) = r.start.as_ref() {
+						let mut result = Vec::with_capacity(r.max as usize);
+						let mut hash = start;
+						let mut cache = cache.lock();
+						for _ in 0..r.max {
+							let _ = match cache.block_header(&hash) {
+								Some(header) => {
+									hash = header.parent_hash();
+									result.push(header);
+								}
+								None => return None,
+							};
+						}	
+						Some(Response::HeaderWithAncestors(result))
+					} else {
+						return None
+					}
+				});
+				match f {
+					Some(r) => r,
+					_ => None,
+				}
 			}
 			CheckedRequest::Receipts(ref check, ref req) => {
 				// empty transactions -> no receipts

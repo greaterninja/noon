@@ -574,10 +574,12 @@ impl<L: AsLightClient> LightSync<L> {
 				let request = {
 					let mut builder = request::Builder::default();
 					builder.push(request::Request::Headers(request::IncompleteHeadersRequest {
-						start: req.start.into(),
-						skip: req.skip,
-						max: req.max,
-						reverse: req.reverse,
+						inner: Some( request::IncompleteHeaderRequestInner {
+							start: req.start.into(),
+							skip: req.skip,
+							max: req.max,
+							reverse: req.reverse,
+							}),
 					})).expect("request provided fully complete with no unresolved back-references; qed");
 					builder.build()
 				};

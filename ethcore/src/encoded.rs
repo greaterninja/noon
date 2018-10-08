@@ -61,6 +61,9 @@ impl Header {
 
 	/// Consume the view and return the raw bytes.
 	pub fn into_inner(self) -> Vec<u8> { self.0 }
+
+        /// dummy
+        pub fn is_empty(&self) -> bool { self.0.is_empty() }
 }
 
 // forwarders to borrowed view.

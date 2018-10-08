@@ -55,29 +55,29 @@ pub trait Provider: Send + Sync {
 	///
 	/// The returned vector may have any length in the range [0, `max`], but the
 	/// results within must adhere to the `skip` and `reverse` parameters.
-	fn block_headers(&self, req: request::CompleteHeadersRequest) -> Option<request::HeadersResponse> {
+	fn block_headers(&self, req: request::CompleteHeadersRequest) -> request::HeadersResponse {
 		use request::HashOrNumber;
 
-		if req.max == 0 { return None }
+		if req.max == 0 { 
+                    return request::HeadersResponse { headers: Vec::new() } 
+                };
 
 		let best_num = self.chain_info().best_block_number;
 		let start_num = match req.start {
 			HashOrNumber::Number(start_num) => start_num,
-			HashOrNumber::Hash(hash) => match self.block_header(BlockId::Hash(hash)) {
-				None => {
+			HashOrNumber::Hash(hash) => {
+                                let header = self.block_header(BlockId::Hash(hash));
+                                if header.is_empty() {
 					trace!(target: "pip_provider", "Unknown block hash {} requested", hash);
-					return None;
+					return request::HeadersResponse { headers: Vec::new() } ;
 				}
-				Some(header) => {
+				else {
 					let num = header.number();
-					let canon_hash = self.block_header(BlockId::Number(num))
-						.map(|h| h.hash());
+					let canon_hash = self.block_header(BlockId::Number(num)).hash();
 
-					if req.max == 1 || canon_hash != Some(hash) {
+					if req.max <= 1 {
 						// Non-canonical header or single header requested.
-						return Some(::request::HeadersResponse {
-							headers: vec![header],
-						})
+						return request::HeadersResponse { headers: vec![header] };
 					}
 
 					num
@@ -92,23 +92,18 @@ pub trait Provider: Send + Sync {
 			.take_while(|&x| if req.reverse { x < start_num } else { best_num.saturating_sub(start_num) >= x })
 			.map(|x| if req.reverse { start_num.saturating_sub(x) } else { start_num.saturating_add(x) })
 			.map(|x| self.block_header(BlockId::Number(x)))
-			.take_while(|x| x.is_some())
-			.flat_map(|x| x)
+			.take_while(|x| !x.is_empty())
 			.collect();
 
-		if headers.is_empty() {
-			None
-		} else {
-			Some(::request::HeadersResponse { headers })
-		}
+		request::HeadersResponse { headers }
 	}
 
 	/// Get a block header by id.
-	fn block_header(&self, id: BlockId) -> Option<encoded::Header>;
+	fn block_header(&self, id: BlockId) -> encoded::Header;
 
 	/// Get a transaction index by hash.
 	fn transaction_index(&self, req: request::CompleteTransactionIndexRequest)
-		-> Option<request::TransactionIndexResponse>;
+		-> request::TransactionIndexResponse;
 
 	/// Fulfill a block body request.
 	fn block_body(&self, req: request::CompleteBodyRequest) -> Option<request::BodyResponse>;
@@ -134,7 +129,7 @@ pub trait Provider: Send + Sync {
 
 	/// Provide a proof-of-execution for the given transaction proof request.
 	/// Returns a vector of all state items necessary to execute the transaction.
-	fn transaction_proof(&self, req: request::CompleteExecutionRequest) -> Option<request::ExecutionResponse>;
+	fn transaction_proof(&self, req: request::CompleteExecutionRequest) -> request::ExecutionResponse;
 
 	/// Provide epoch signal data at given block hash. This should be just the
 	fn epoch_signal(&self, req: request::CompleteSignalRequest) -> Option<request::SignalResponse>;
@@ -143,45 +138,61 @@ pub trait Provider: Send + Sync {
 // Implementation of a light client data provider for a client.
 impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 	fn chain_info(&self) -> BlockChainInfo {
-		ChainInfo::chain_info(self)
+		let chain_info = ChainInfo::chain_info(self);
+		trace!(target: "pip_provider", " chain_info {:?}", chain_info);
+		chain_info
 	}
 
 	fn reorg_depth(&self, a: &H256, b: &H256) -> Option<u64> {
-		self.tree_route(a, b).map(|route| route.index as u64)
+		let reorg = self.tree_route(a, b).map(|route| route.index as u64);
+		trace!(target: "pip_provider", " reorg_depth {:?}", reorg);
+		reorg
 	}
 
 	fn earliest_state(&self) -> Option<u64> {
-		Some(self.pruning_info().earliest_state)
+		let earliest_state = self.pruning_info().earliest_state;
+		trace!(target: "pip_provider", "earliest_state {:?}", earliest_state);
+		Some(earliest_state)
 	}
 
-	fn block_header(&self, id: BlockId) -> Option<encoded::Header> {
-		ClientBlockInfo::block_header(self, id)
+	fn block_header(&self, id: BlockId) -> encoded::Header {
+		let block_header = ClientBlockInfo::block_header(self, id).unwrap_or_else(|| encoded::Header::new(Vec::new()));
+		trace!(target: "pip_provider", "block_header {:?}", block_header);
+		block_header
 	}
 
 	fn transaction_index(&self, req: request::CompleteTransactionIndexRequest)
-		-> Option<request::TransactionIndexResponse>
+		-> request::TransactionIndexResponse
 	{
 		use ethcore::ids::TransactionId;
 
-		self.transaction_receipt(TransactionId::Hash(req.hash)).map(|receipt| request::TransactionIndexResponse {
-			num: receipt.block_number,
-			hash: receipt.block_hash,
-			index: receipt.transaction_index as u64,
-		})
-	}
+		let transaction_receipt = self.transaction_receipt(TransactionId::Hash(req.hash)).map(|receipt| request::TransactionIndexResponse {
+			inner: Some(request::TransactionIndexResponseInner { 
+                            num: receipt.block_number,
+			    hash: receipt.block_hash,
+			    index: receipt.transaction_index as u64,
+                        }),
+                }).unwrap_or_else(|| request::TransactionIndexResponse { inner: None });
+		trace!(target: "pip_provider", "transaction_receipt: {:?}", transaction_receipt);
+		transaction_receipt
+        }
 
 	fn block_body(&self, req: request::CompleteBodyRequest) -> Option<request::BodyResponse> {
-		BlockChainClient::block_body(self, BlockId::Hash(req.hash))
-			.map(|body| ::request::BodyResponse { body })
+		let block_body = BlockChainClient::block_body(self, BlockId::Hash(req.hash))
+			.map(|body| ::request::BodyResponse { body });
+		trace!(target: "pip_provider", "block_body: {:?}", block_body);
+		block_body
 	}
 
 	fn block_receipts(&self, req: request::CompleteReceiptsRequest) -> Option<request::ReceiptsResponse> {
-		BlockChainClient::encoded_block_receipts(self, &req.hash)
-			.map(|x| ::request::ReceiptsResponse { receipts: ::rlp::decode_list(&x) })
+		let block_receipt = BlockChainClient::encoded_block_receipts(self, &req.hash)
+			.map(|x| ::request::ReceiptsResponse { receipts: ::rlp::decode_list(&x) });
+		trace!(target: "pip_provider", "block_receipt: {:?}", block_receipt);
+		block_receipt
 	}
 
 	fn account_proof(&self, req: request::CompleteAccountRequest) -> Option<request::AccountResponse> {
-		self.prove_account(req.address_hash, BlockId::Hash(req.block_hash)).map(|(proof, acc)| {
+		let account_proof = self.prove_account(req.address_hash, BlockId::Hash(req.block_hash)).map(|(proof, acc)| {
 			::request::AccountResponse {
 				proof,
 				nonce: acc.nonce,
@@ -189,21 +200,27 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 				code_hash: acc.code_hash,
 				storage_root: acc.storage_root,
 			}
-		})
+		});
+		trace!(target: "pip_provider", "account_proof: {:?}", account_proof);
+		account_proof
 	}
 
 	fn storage_proof(&self, req: request::CompleteStorageRequest) -> Option<request::StorageResponse> {
-		self.prove_storage(req.address_hash, req.key_hash, BlockId::Hash(req.block_hash)).map(|(proof, item) | {
+		let storage_proof = self.prove_storage(req.address_hash, req.key_hash, BlockId::Hash(req.block_hash)).map(|(proof, item) | {
 			::request::StorageResponse {
 				proof,
 				value: item,
 			}
-		})
+		});
+		trace!(target: "pip_provider", "storage_proof: {:?}", storage_proof);
+		storage_proof
 	}
 
 	fn contract_code(&self, req: request::CompleteCodeRequest) -> Option<request::CodeResponse> {
-		self.state_data(&req.code_hash)
-			.map(|code| ::request::CodeResponse { code })
+		let contract_code = self.state_data(&req.code_hash)
+			.map(|code| ::request::CodeResponse { code });
+		trace!(target: "pip_provider", "contract_code: {:?}", contract_code);
+		contract_code
 	}
 
 	fn header_proof(&self, req: request::CompleteHeaderProofRequest) -> Option<request::HeaderProofResponse> {
@@ -243,14 +260,17 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 
 			match cht::build(cht_number, block_info) {
 				Some(cht) => cht,
-				None => return None, // incomplete CHT.
+				None => {
+					debug!(target: "pip_provider", "Couldn't build CHT with cht_number: {}", cht_number);
+					return None
+				}
 			}
 		};
 
 		let (needed_hdr, needed_td) = needed.expect("`needed` always set in loop, number checked before; qed");
 
 		// prove our result.
-		match cht.prove(req.num, 0) {
+		let cht_proof = match cht.prove(req.num, 0) {
 			Ok(Some(proof)) => Some(::request::HeaderProofResponse {
 				proof,
 				hash: needed_hdr.hash(),
@@ -261,16 +281,21 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 				debug!(target: "pip_provider", "Error looking up number in freshly-created CHT: {}", e);
 				None
 			}
-		}
+		};
+		trace!(target: "pip_provider", "CHT proof: {:?}", cht_proof);
+		cht_proof
 	}
 
-	fn transaction_proof(&self, req: request::CompleteExecutionRequest) -> Option<request::ExecutionResponse> {
+	fn transaction_proof(&self, req: request::CompleteExecutionRequest) -> request::ExecutionResponse {
 		use transaction::Transaction;
 
 		let id = BlockId::Hash(req.block_hash);
 		let nonce = match self.nonce(&req.from, id) {
 			Some(nonce) => nonce,
-			None => return None,
+			None => {
+				debug!(target: "pip_provider", "Couldn't find nonce in the execution proof");
+				return request::ExecutionResponse { items: Vec::new() }
+			}
 		};
 		let transaction = Transaction {
 			nonce,
@@ -281,21 +306,27 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 			data: req.data,
 		}.fake_sign(req.from);
 
-		self.prove_transaction(transaction, id)
-			.map(|(_, proof)| ::request::ExecutionResponse { items: proof })
+		let transaction_proof = self.prove_transaction(transaction, id)
+			.map_or_else(|| request::ExecutionResponse { items: Vec::new() }, |(_, proof)| request::ExecutionResponse { items: proof });
+		trace!(target: "pip_provider", "transaction_proof: {:?}", transaction_proof);
+		transaction_proof
 	}
 
 	fn transactions_to_propagate(&self) -> Vec<PendingTransaction> {
-		BlockChainClient::transactions_to_propagate(self)
+		let transactions_to_propagate = BlockChainClient::transactions_to_propagate(self)
 			.into_iter()
 			.map(|tx| tx.pending().clone())
-			.collect()
+			.collect();
+		trace!(target: "pip_provider", "transactions_to_propagate: {:?}", transactions_to_propagate);
+		transactions_to_propagate
 	}
 
 	fn epoch_signal(&self, req: request::CompleteSignalRequest) -> Option<request::SignalResponse> {
-		self.epoch_signal(req.block_hash).map(|signal| request::SignalResponse {
+		let epoch_signal = self.epoch_signal(req.block_hash).map(|signal| request::SignalResponse {
 			signal,
-		})
+		});
+		trace!(target: "pip_provider", "epoch_signal: {:?}", epoch_signal);
+		epoch_signal
 	}
 }
 
@@ -303,15 +334,15 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 /// a light transaction queue.
 pub struct LightProvider<L> {
 	client: Arc<L>,
-	txqueue: Arc<RwLock<TransactionQueue>>,
+	tx_queue: Arc<RwLock<TransactionQueue>>,
 }
 
 impl<L> LightProvider<L> {
 	/// Create a new `LightProvider` from the given client and transaction queue.
-	pub fn new(client: Arc<L>, txqueue: Arc<RwLock<TransactionQueue>>) -> Self {
+	pub fn new(client: Arc<L>, tx_queue: Arc<RwLock<TransactionQueue>>) -> Self {
 		LightProvider {
 			client,
-			txqueue,
+			tx_queue,
 		}
 	}
 }
@@ -330,14 +361,14 @@ impl<L: AsLightClient + Send + Sync> Provider for LightProvider<L> {
 		None
 	}
 
-	fn block_header(&self, id: BlockId) -> Option<encoded::Header> {
-		self.client.as_light_client().block_header(id)
+	fn block_header(&self, id: BlockId) -> encoded::Header {
+		self.client.as_light_client().block_header(id).unwrap_or_else(|| encoded::Header::new(Vec::new()))
 	}
 
 	fn transaction_index(&self, _req: request::CompleteTransactionIndexRequest)
-		-> Option<request::TransactionIndexResponse>
+		-> request::TransactionIndexResponse
 	{
-		None
+	    request::TransactionIndexResponse { inner: None }
 	}
 
 	fn block_body(&self, _req: request::CompleteBodyRequest) -> Option<request::BodyResponse> {
@@ -364,8 +395,8 @@ impl<L: AsLightClient + Send + Sync> Provider for LightProvider<L> {
 		None
 	}
 
-	fn transaction_proof(&self, _req: request::CompleteExecutionRequest) -> Option<request::ExecutionResponse> {
-		None
+	fn transaction_proof(&self, _req: request::CompleteExecutionRequest) -> request::ExecutionResponse {
+	    request::ExecutionResponse { items: Vec::new() }
 	}
 
 	fn epoch_signal(&self, _req: request::CompleteSignalRequest) -> Option<request::SignalResponse> {
@@ -374,7 +405,7 @@ impl<L: AsLightClient + Send + Sync> Provider for LightProvider<L> {
 
 	fn transactions_to_propagate(&self) -> Vec<PendingTransaction> {
 		let chain_info = self.chain_info();
-		self.txqueue.read()
+		self.tx_queue.read()
 			.ready_transactions(chain_info.best_block_number, chain_info.best_block_timestamp)
 	}
 }

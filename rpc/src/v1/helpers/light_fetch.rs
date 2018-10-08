@@ -34,6 +34,7 @@ use jsonrpc_macros::Trailing;
 use light::cache::Cache;
 use light::client::LightChainClient;
 use light::{cht, MAX_HEADERS_PER_REQUEST};
+use light::request::TransactionIndexResponseInner;
 use light::on_demand::{
 	request, OnDemand, HeaderRef, Request as OnDemandRequest,
 	Response as OnDemandResponse, ExecutionResult,
@@ -389,6 +390,16 @@ impl LightFetch {
 
 			let fetcher = fetcher.clone();
 			let extract_transaction = eventual_index.and_then(move |index| {
+				if index.inner.is_none() {
+                                    println!("Invalid block hash");
+                                }
+                                
+                                let index = index.inner.unwrap_or( TransactionIndexResponseInner { 
+                                    num: 0,
+			            hash: 0.into(),
+			            index: 0_u64,
+                                });
+
 				// check that the block is known by number.
 				// that ensures that it is within the chain that we are aware of.
 				fetcher.block(BlockId::Number(index.num)).then(move |blk| match blk {
