@@ -853,7 +853,7 @@ pub mod header_proof {
 	}
 
 	/// The output of a request for a header proof.
-	#[derive(Debug, Clone, PartialEq, Eq)]
+	#[derive(Debug, Default, Clone, PartialEq, Eq)]
 	pub struct Response {
 		/// Inclusion proof of the header and total difficulty in the CHT.
 		pub proof: Vec<Bytes>,
@@ -912,8 +912,8 @@ pub mod transaction_index {
 			match self.hash {
 				Some(Field::Scalar(_)) => Ok(()),
 				Some(Field::BackReference(req, idx)) => f(req, idx, OutputKind::Hash),
-			        _ => Err(NoSuchOutput),
-                        }
+				_ => Err(NoSuchOutput),
+			}
 		}
 
 		fn note_outputs<F>(&self, mut f: F) where F: FnMut(usize, OutputKind) {
@@ -951,8 +951,8 @@ pub mod transaction_index {
 		pub hash: H256,
 	}
 	
-        /// ....
-        #[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
+	/// .Inner transaction index
+	#[derive(Debug, Default, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
 	pub struct InnerResponse {
 		/// Block number.
 		pub num: u64,
@@ -963,11 +963,11 @@ pub mod transaction_index {
 	}
 
 	/// The output of a request for transaction index.
-	#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
+	#[derive(Debug, Default, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
 	pub struct Response {
-            /// ...
-            pub inner: Option<InnerResponse>,
-        }
+		/// ...
+		pub inner: Option<InnerResponse>,
+	}
 
 	impl super::ResponseLike for Response {
 		/// Fill reusable outputs by providing them to the function.
@@ -1036,7 +1036,7 @@ pub mod block_receipts {
 	}
 
 	/// The output of a request for block receipts.
-	#[derive(Debug, Clone, PartialEq, Eq, RlpEncodableWrapper, RlpDecodableWrapper)]
+	#[derive(Debug, Default, Clone, PartialEq, Eq, RlpEncodableWrapper, RlpDecodableWrapper)]
 	pub struct Response {
 		/// The block receipts.
 		pub receipts: Vec<Receipt>
@@ -1105,7 +1105,7 @@ pub mod block_body {
 	}
 
 	/// The output of a request for block body.
-	#[derive(Debug, Clone, PartialEq, Eq)]
+	#[derive(Debug, Default, Clone, PartialEq, Eq)]
 	pub struct Response {
 		/// The block body.
 		pub body: encoded::Body,
@@ -1215,7 +1215,7 @@ pub mod account {
 	}
 
 	/// The output of a request for an account state proof.
-	#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
+	#[derive(Debug, Default, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
 	pub struct Response {
 		/// Inclusion/exclusion proof
 		pub proof: Vec<Bytes>,
@@ -1331,7 +1331,7 @@ pub mod storage {
 	}
 
 	/// The output of a request for an account state proof.
-	#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
+	#[derive(Debug, Default, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
 	pub struct Response {
 		/// Inclusion/exclusion proof
 		pub proof: Vec<Bytes>,
@@ -1420,7 +1420,7 @@ pub mod contract_code {
 	}
 
 	/// The output of a request for
-	#[derive(Debug, Clone, PartialEq, Eq, RlpEncodableWrapper, RlpDecodableWrapper)]
+	#[derive(Debug, Default, Clone, PartialEq, Eq, RlpEncodableWrapper, RlpDecodableWrapper)]
 	pub struct Response {
 		/// The requested code.
 		pub code: Bytes,
@@ -1521,7 +1521,7 @@ pub mod execution {
 	}
 
 	/// The output of a request for proof of execution
-	#[derive(Debug, Clone, PartialEq, Eq)]
+	#[derive(Debug, Default, Clone, PartialEq, Eq)]
 	pub struct Response {
 		/// All state items (trie nodes, code) necessary to re-prove the transaction.
 		pub items: Vec<DBValue>,
@@ -1628,7 +1628,7 @@ pub mod epoch_signal {
 	}
 
 	/// The output of a request for an epoch signal.
-	#[derive(Debug, Clone, PartialEq, Eq)]
+	#[derive(Debug, Default, Clone, PartialEq, Eq)]
 	pub struct Response {
 		/// The requested epoch signal.
 		pub signal: Bytes,

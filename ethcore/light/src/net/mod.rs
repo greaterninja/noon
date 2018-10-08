@@ -954,15 +954,15 @@ impl LightProtocol {
 			let _timer = self.load_distribution.begin_timer(&complete_req);
 			match complete_req {
 				CompleteRequest::Headers(req) => Some(Response::Headers(self.provider.block_headers(req))),
-				CompleteRequest::HeaderProof(req) => self.provider.header_proof(req).map(Response::HeaderProof),
+				CompleteRequest::HeaderProof(req) => Some(Response::HeaderProof(self.provider.header_proof(req))),
 				CompleteRequest::TransactionIndex(req) => Some(Response::TransactionIndex(self.provider.transaction_index(req))),
-				CompleteRequest::Body(req) => self.provider.block_body(req).map(Response::Body),
-				CompleteRequest::Receipts(req) => self.provider.block_receipts(req).map(Response::Receipts),
-				CompleteRequest::Account(req) => self.provider.account_proof(req).map(Response::Account),
-				CompleteRequest::Storage(req) => self.provider.storage_proof(req).map(Response::Storage),
-				CompleteRequest::Code(req) => self.provider.contract_code(req).map(Response::Code),
+				CompleteRequest::Body(req) => Some(Response::Body(self.provider.block_body(req))),
+				CompleteRequest::Receipts(req) => Some(Response::Receipts(self.provider.block_receipts(req))),
+				CompleteRequest::Account(req) => Some(Response::Account(self.provider.account_proof(req))),
+				CompleteRequest::Storage(req) => Some(Response::Storage(self.provider.storage_proof(req))),
+				CompleteRequest::Code(req) => Some(Response::Code(self.provider.contract_code(req))),
 				CompleteRequest::Execution(req) => Some(Response::Execution(self.provider.transaction_proof(req))),
-				CompleteRequest::Signal(req) => self.provider.epoch_signal(req).map(Response::Signal),
+				CompleteRequest::Signal(req) => Some(Response::Signal(self.provider.epoch_signal(req))),
 			}
 		});
 

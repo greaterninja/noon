@@ -115,7 +115,7 @@ impl Header {
 }
 
 /// Owning block body view.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Body(Vec<u8>);
 
 impl HeapSizeOf for Body {
@@ -177,6 +177,9 @@ impl Body {
 
 	/// Hash of each uncle.
 	pub fn uncle_hashes(&self) -> Vec<H256> { self.view().uncle_hashes() }
+
+	/// Is empty
+	pub fn is_empty(&self) -> bool { self.0.is_empty() }
 }
 
 /// Owning block view.

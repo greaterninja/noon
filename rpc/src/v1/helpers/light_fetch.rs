@@ -34,7 +34,6 @@ use jsonrpc_macros::Trailing;
 use light::cache::Cache;
 use light::client::LightChainClient;
 use light::{cht, MAX_HEADERS_PER_REQUEST};
-use light::request::TransactionIndexResponseInner;
 use light::on_demand::{
 	request, OnDemand, HeaderRef, Request as OnDemandRequest,
 	Response as OnDemandResponse, ExecutionResult,
@@ -145,7 +144,10 @@ impl LightFetch {
 	pub fn header(&self, id: BlockId) -> impl Future<Item = encoded::Header, Error = Error> + Send {
 		let mut reqs = Vec::new();
 		let header_ref = match self.make_header_requests(id, &mut reqs) {
-			Ok(r) => r,
+			Ok(r) => {
+				trace!(target: "light_fetch", "header_response: {:?}", r);
+				r
+			}
 			Err(e) => return Either::A(future::err(e)),
 		};
 
@@ -169,7 +171,10 @@ impl LightFetch {
 		reqs.push(request::Code { header: header_ref, code_hash: Field::back_ref(account_idx, 0) }.into());
 
 		Either::B(self.send_requests(reqs, |mut res| match res.pop() {
-			Some(OnDemandResponse::Code(code)) => code,
+			Some(OnDemandResponse::Code(code)) => {
+				trace!(target: "light_fetch", "code response: {:?}", code);
+				code
+			}
 			_ => panic!(WRONG_RESPONSE_AMOUNT_TYPE_PROOF),
 		}))
 	}
@@ -185,8 +190,11 @@ impl LightFetch {
 
 		reqs.push(request::Account { header: header_ref, address: address }.into());
 
-		Either::B(self.send_requests(reqs, |mut res|match res.pop() {
-			Some(OnDemandResponse::Account(acc)) => acc,
+		Either::B(self.send_requests(reqs, |mut res| match res.pop() {
+			Some(OnDemandResponse::Account(acc)) => {
+				trace!(target: "light_fetch", "account response: {:?}", acc);
+				acc
+			}
 			_ => panic!(WRONG_RESPONSE_AMOUNT_TYPE_PROOF),
 		}))
 	}
@@ -280,7 +288,10 @@ impl LightFetch {
 		reqs.push(request::Body(header_ref).into());
 
 		Either::B(self.send_requests(reqs, |mut res| match res.pop() {
-			Some(OnDemandResponse::Body(b)) => b,
+			Some(OnDemandResponse::Body(b)) => {
+				trace!(target: "light_fetch", "body response: {:?}", b);
+				b
+			}
 			_ => panic!(WRONG_RESPONSE_AMOUNT_TYPE_PROOF),
 		}))
 	}
@@ -296,7 +307,10 @@ impl LightFetch {
 		reqs.push(request::BlockReceipts(header_ref).into());
 
 		Either::B(self.send_requests(reqs, |mut res| match res.pop() {
-			Some(OnDemandResponse::Receipts(b)) => b,
+			Some(OnDemandResponse::Receipts(b)) => {
+				trace!(target: "light_fetch", "receipt response: {:?}", b);
+				b
+			}
 			_ => panic!(WRONG_RESPONSE_AMOUNT_TYPE_PROOF),
 		}))
 	}
@@ -375,7 +389,7 @@ impl LightFetch {
 		-> impl Future<Item = Option<(Transaction, usize)>, Error = Error> + Send
 	{
 		let params = (self.sync.clone(), self.on_demand.clone());
-		let fetcher: Self = self.clone();
+		let fetcher = self.clone();
 
 		Box::new(future::loop_fn(params, move |(sync, on_demand)| {
 			let maybe_future = sync.with_context(|ctx| {
@@ -390,23 +404,21 @@ impl LightFetch {
 
 			let fetcher = fetcher.clone();
 			let extract_transaction = eventual_index.and_then(move |index| {
-				if index.inner.is_none() {
-                                    println!("Invalid block hash");
-                                }
-                                
-                                let index = index.inner.unwrap_or( TransactionIndexResponseInner { 
-                                    num: 0,
-			            hash: 0.into(),
-			            index: 0_u64,
-                                });
+				let block_id = index.inner.as_ref().map_or_else(|| {
+					trace!(target: "on_demand", "transaction_by_hash received empty response");
+					BlockId::Invalid
+				}, |inner| BlockId::Number(inner.num));
 
 				// check that the block is known by number.
 				// that ensures that it is within the chain that we are aware of.
-				fetcher.block(BlockId::Number(index.num)).then(move |blk| match blk {
+				fetcher.block(block_id).then(move |blk| match blk {
 					Ok(blk) => {
+						// this always be `Some` because `BlockId::Invalid` will never pass
+						// `block()` also make it `default` so it will fail during the other checks
+						let index = index.inner.unwrap_or_default();
+
 						// if the block is known by number, make sure the
 						// index from earlier isn't garbage.
-
 						if blk.hash() != index.hash {
 							// index is on a different chain from us.
 							return Ok(future::Loop::Continue((sync, on_demand)))
@@ -486,6 +498,7 @@ impl LightFetch {
 						header_map.get(h).map(|hdr| hdr.number())
 						.expect("from_block and to_block headers are fetched by hash; this closure is only called on from_block and to_block; qed"),
 					&BlockId::Number(x) => x,
+					&BlockId::Invalid => panic!("headers_range_by_block_id INVALID BLOCK ID"),
 				};
 				(block_number(&from_block), block_number(&to_block))
 			};
