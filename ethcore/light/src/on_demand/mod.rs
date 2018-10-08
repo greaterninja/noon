@@ -19,7 +19,7 @@
 //! will take the raw data received here and extract meaningful results from it.
 
 use std::cmp;
-use std::collections::{HashMap, BTreeSet};
+use std::collections::{HashMap, HashSet, BTreeSet};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -69,6 +69,11 @@ pub mod error {
 		}
 
 		errors {
+			#[doc = "Request was faulty"]
+			FaultyRequest(bad_responses: usize, num_providers: usize) {
+				description("Majority of the providers found the request faulty")
+				display("#{} peers of #{} total peers found the request faulty", bad_responses, num_providers)
+			}
 			#[doc = "Max number of on-demand query attempts reached without result."]
 			MaxAttemptReach(query_index: usize) {
 				description("On-demand query limit reached")
@@ -123,6 +128,10 @@ struct Pending {
 	net_requests: basic_request::Batch<NetworkRequest>,
 	required_capabilities: Capabilities,
 	responses: Vec<Response>,
+        /// This will collect how many bad responses we get from each peer per request
+        /// When we get `|bad_responses| > peers / 2` then regard the reques as `faulty`
+        /// This, can happen for several reasons such as a request for a hash that doesn't exist
+        pub bad_responses: HashSet<PeerId>,
 	sender: oneshot::Sender<PendingResponse>,
 	base_query_index: usize,
 	remaining_query_count: usize,
@@ -241,6 +250,15 @@ impl Pending {
 	fn time_out(self) {
 		trace!(target: "on_demand", "Dropping a pending query (no new peer time out) at query #{}", self.query_id_history.len());
 		let err = self::error::ErrorKind::TimeoutOnNewPeers(self.requests.num_answered(), self.query_id_history.len());
+		if self.sender.send(Err(err.into())).is_err() {
+			debug!(target: "on_demand", "Dropped oneshot channel receiver on time out");
+		}
+	}
+
+	// returning a faulty request error
+	fn is_faulty_request(self, bad_peers: usize, total_peers: usize) {
+		warn!(target: "on_demand", "dropping request: majority of the providers could not prove it");
+		let err = self::error::ErrorKind::FaultyRequest(bad_peers, total_peers);
 		if self.sender.send(Err(err.into())).is_err() {
 			debug!(target: "on_demand", "Dropped oneshot channel receiver on time out");
 		}
@@ -403,6 +421,7 @@ impl OnDemand {
 			required_capabilities: capabilities,
 			responses,
 			sender,
+                        bad_responses: HashSet::new(),
 			base_query_index: 0,
 			remaining_query_count: 0,
 			query_id_history: BTreeSet::new(),
@@ -608,13 +627,20 @@ impl Handler for OnDemand {
 		//   2. pending.requests.supply_response
 		//   3. if extracted on-demand response, keep it for later.
 		for response in responses {
+			trace!(target: "on_demand", "got a response: {} {:?}", req_id, response);
 			if let Err(e) = pending.supply_response(&*self.cache, response) {
-				let peer = ctx.peer();
-				debug!(target: "on_demand", "Peer {} gave bad response: {:?}", peer, e);
-				ctx.disable_peer(peer);
+                            trace!(target: "on_demand", "req_id: {} was err {:?}", req_id, e);
+			    let peer = ctx.peer();
+                            pending.bad_responses.insert(peer);
+                            
+                            let bad_peers = pending.bad_responses.len();
+                            let total_peers = self.peers.read().len();
 
-				break;
-			}
+                            if bad_peers > total_peers / 2 {
+                                pending.is_faulty_request(bad_peers, total_peers);
+                                return;
+                            }
+                        }
 		}
 
 		pending.fill_unanswered();

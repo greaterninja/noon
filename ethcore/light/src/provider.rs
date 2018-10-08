@@ -157,7 +157,8 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 
 	fn block_header(&self, id: BlockId) -> encoded::Header {
 		let block_header = ClientBlockInfo::block_header(self, id).unwrap_or_default();
-		trace!(target: "pip_provider", "block_header resonse: block_id: {:?} was succesful {}", id, !block_header.is_empty());
+		debug!(target: "pip_provider", "block_header resonse: block_id: {:?} was succesful {}", id, !block_header.is_empty());
+		trace!(target: "pip_provider", "block_header {:?} ", block_header);
 		block_header
 	}
 
@@ -171,36 +172,40 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 				index: receipt.transaction_index as u64,
 			}),
 		}).unwrap_or_default();
-		trace!(target: "pip_provider", "TransactionReceipt response: req.hash {} was succesful: {}", req.hash, transaction_receipt.inner.is_some());
+		debug!(target: "pip_provider", "TransactionReceipt response: req.hash {} was succesful: {}", req.hash, transaction_receipt.inner.is_some());
+		trace!(target: "pip_provider", "transaction_receipt: {:?} ", transaction_receipt);
 		transaction_receipt
 	}
 
 	fn block_body(&self, req: request::CompleteBodyRequest) -> request::BodyResponse {
 		let block_body = BlockChainClient::block_body(self, BlockId::Hash(req.hash))
 			.map_or_else(Default::default, |body| request::BodyResponse { body });
-		trace!(target: "pip_provider", "block_body response: request_hash {}: was succesful: {}", req.hash, !block_body.body.is_empty());
+		debug!(target: "pip_provider", "block_body response: request_hash {}: was succesful: {}", req.hash, !block_body.body.is_empty());
+		trace!(target: "pip_provider", "block_body {:?}", block_body);
 		block_body
 	}
 
 	fn block_receipts(&self, req: request::CompleteReceiptsRequest) -> request::ReceiptsResponse {
 		let block_receipt = BlockChainClient::encoded_block_receipts(self, &req.hash)
 			.map_or_else(Default::default, |receipt| request::ReceiptsResponse { receipts: ::rlp::decode_list(&receipt) });
-		trace!(target: "pip_provider", "block_receipts response: request_hash {}: was succesful: {}", req.hash, !block_receipt.receipts.is_empty());
+		debug!(target: "pip_provider", "block_receipts response: request_hash {}: was succesful: {}", req.hash, !block_receipt.receipts.is_empty());
+		trace!(target: "pip_provider", "block_receipts {:?}", block_receipt);
 		block_receipt
 	}
 
 	fn account_proof(&self, req: request::CompleteAccountRequest) -> request::AccountResponse {
 		let account_proof = self.prove_account(req.address_hash, BlockId::Hash(req.block_hash))
 			.map_or_else(Default::default, |(proof, acc)| {
-			request::AccountResponse {
-				proof,
-				nonce: acc.nonce,
-				balance: acc.balance,
-				code_hash: acc.code_hash,
-				storage_root: acc.storage_root,
-			}
+				request::AccountResponse {
+					proof,
+					nonce: acc.nonce,
+					balance: acc.balance,
+					code_hash: acc.code_hash,
+					storage_root: acc.storage_root,
+				}
 		});
-		trace!(target: "pip_provider", "account_proof response for account: {} was succesful: {}", req.address_hash, !account_proof.proof.is_empty());
+		debug!(target: "pip_provider", "account_proof response for account: {} was succesful: {}", req.address_hash, !account_proof.proof.is_empty());
+		trace!(target: "pip_provider", "account: {:?}", account_proof);
 		account_proof
 	}
 
@@ -212,16 +217,18 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 					value: item,
 				}
 		});
-		trace!(target: "pip_provider", "storage_proof response for (block_hash: {} account: {}) was succesful: {}", 
+		debug!(target: "pip_provider", "storage_proof response for (block_hash: {} account: {}) was succesful: {}", 
 			req.block_hash, req.address_hash, !storage_proof.proof.is_empty());
+		trace!(target: "pip_provider", "storage: {:?}", storage_proof);
 		storage_proof
 	}
 
 	fn contract_code(&self, req: request::CompleteCodeRequest) -> request::CodeResponse {
 		let contract_code = self.state_data(&req.code_hash)
 			.map_or_else(Default::default, |code| request::CodeResponse { code });
-		trace!(target: "pip_provider", "contract_code response for (block_hash {} code_hash {}) was successful: {}", 
+		debug!(target: "pip_provider", "contract_code response for (block_hash {} code_hash {}) was successful: {}", 
 				req.block_hash, req.code_hash, !contract_code.code.is_empty());
+		trace!(target: "pip_provider", "contrace_code{:?}", contract_code);
 		contract_code
 	}
 
@@ -284,7 +291,8 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 				Default::default()
 			}
 		};
-		trace!(target: "pip_provider", "CHT proof is success: {}", !cht_proof.proof.is_empty());
+		debug!(target: "pip_provider", "CHT proof is success: {}", !cht_proof.proof.is_empty());
+		trace!(target: "pip_provider", "CHT proof {:?}", cht_proof.proof);
 		cht_proof
 	}
 
@@ -310,7 +318,9 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 
 		let transaction_proof = self.prove_transaction(transaction, id)
 			.map_or_else(Default::default, |(_, proof)| request::ExecutionResponse { items: proof });
-		trace!(target: "pip_provider", "transaction_proof response (tx_hash {} from: {} value: {}) was successful: {}", req.block_hash, req.from, req.value, !transaction_proof.items.is_empty());
+		debug!(target: "pip_provider", "transaction_proof response (tx_hash {} from: {} value: {}) was successful: {}", 
+                       req.block_hash, req.from, req.value, !transaction_proof.items.is_empty());
+		trace!(target: "pip_provider", "transaction_proof: {:?}", transaction_proof);
 		transaction_proof
 	}
 
