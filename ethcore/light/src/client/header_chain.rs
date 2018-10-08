@@ -635,6 +635,7 @@ impl HeaderChain {
 			BlockId::Latest => {
 				Some(self.best_block.read().hash)
 			}
+			BlockId::Invalid => None,
 		}
 	}
 
@@ -689,6 +690,7 @@ impl HeaderChain {
 
 				load_from_db(hash)
 			}
+			BlockId::Invalid => None,
 		}
 	}
 
@@ -710,7 +712,8 @@ impl HeaderChain {
 				if self.best_block.read().number < num { return None }
 				candidates.get(&num).map(|era| era.candidates[0].total_difficulty)
 			}
-			BlockId::Latest => Some(self.best_block.read().total_difficulty)
+			BlockId::Latest => Some(self.best_block.read().total_difficulty),
+			BlockId::Invalid => None,
 		}
 	}
 

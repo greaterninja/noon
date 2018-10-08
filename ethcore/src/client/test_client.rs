@@ -330,7 +330,8 @@ impl TestBlockChainClient {
 			BlockId::Hash(hash) => Some(hash),
 			BlockId::Number(n) => self.numbers.read().get(&(n as usize)).cloned(),
 			BlockId::Earliest => self.numbers.read().get(&0).cloned(),
-			BlockId::Latest => self.numbers.read().get(&(self.numbers.read().len() - 1)).cloned()
+			BlockId::Latest => self.numbers.read().get(&(self.numbers.read().len() - 1)).cloned(),
+			BlockId::Invalid => None,
 		}
 	}
 
@@ -714,7 +715,8 @@ impl BlockChainClient for TestBlockChainClient {
 			BlockId::Earliest => Some(0),
 			BlockId::Latest => Some(self.chain_info().best_block_number),
 			BlockId::Hash(ref h) =>
-				self.numbers.read().iter().find(|&(_, hash)| hash == h).map(|e| *e.0 as u64)
+				self.numbers.read().iter().find(|&(_, hash)| hash == h).map(|e| *e.0 as u64),
+			BlockId::Invalid => None,
 		}
 	}
 

@@ -1170,6 +1170,8 @@ impl Client {
 			BlockId::Number(number) => chain.block_hash(number),
 			BlockId::Earliest => chain.block_hash(0),
 			BlockId::Latest => Some(chain.best_block_hash()),
+			BlockId::Invalid => None,
+
 		}
 	}
 
@@ -1268,6 +1270,8 @@ impl Client {
 			BlockId::Hash(ref hash) => self.chain.read().block_number(hash),
 			BlockId::Earliest => Some(0),
 			BlockId::Latest => Some(self.chain.read().best_block_number()),
+			BlockId::Invalid => None,
+
 		}
 	}
 
@@ -1283,7 +1287,7 @@ impl Client {
 				=> Some(self.chain.read().best_block_header()),
 			BlockId::Number(number) if number == self.chain.read().best_block_number()
 				=> Some(self.chain.read().best_block_header()),
-			_   => self.block_header(id).and_then(|h| h.decode().ok())
+			_ => self.block_header(id).and_then(|h| h.decode().ok())
 		}
 	}
 }
@@ -1880,6 +1884,7 @@ impl BlockChainClient for Client {
 				// If it is referred by hash, we see whether a hash -> number -> hash conversion gives us the same
 				// result.
 				&BlockId::Hash(ref hash) => chain.is_canon(hash),
+				&BlockId::Invalid => false,
 			}
 		};
 
@@ -2131,7 +2136,7 @@ impl IoClient for Client {
 			let is_parent_pending = self.queued_ancient_blocks.read().0.contains(&parent_hash);
 			if !is_parent_pending {
 				let status = self.block_status(BlockId::Hash(parent_hash));
-				if  status == BlockStatus::Unknown {
+				if status == BlockStatus::Unknown {
 					bail!(EthcoreErrorKind::Block(BlockError::UnknownParent(parent_hash)));
 				}
 			}
