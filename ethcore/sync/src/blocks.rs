@@ -28,6 +28,8 @@ use transaction::UnverifiedTransaction;
 
 known_heap_size!(0, HeaderId);
 
+const MAX_DRAINED_BLOCKS = 2_000;
+
 #[derive(PartialEq, Debug, Clone)]
 pub struct SyncHeader {
 	pub bytes: Bytes,
@@ -349,7 +351,12 @@ impl BlockCollection {
 		{
 			let mut blocks = Vec::new();
 			let mut head = self.head;
+
 			while let Some(h) = head {
+				if blocks.len() > MAX_DRAINED_BLOCKS {
+					break;
+				}
+
 				head = self.parents.get(&h).cloned();
 				if let Some(head) = head {
 					match self.blocks.remove(&head) {
