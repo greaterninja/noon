@@ -28,7 +28,7 @@ use transaction::UnverifiedTransaction;
 
 known_heap_size!(0, HeaderId);
 
-const MAX_DRAINED_BLOCKS = 2_000;
+const MAX_DRAINED_BLOCKS: usize = 2_000;
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct SyncHeader {
