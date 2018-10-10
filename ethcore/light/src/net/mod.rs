@@ -567,7 +567,12 @@ impl LightProtocol {
 			None => Err(Error::UnknownPeer), // probably only occurs in a race of some kind.
 		};
 
-		res.map(|_| IdGuard::new(peers, peer, req_id))
+		if let Err(e) = res {
+			trace!(target: "on_demand", "pre_verify response failed {:?}", e);
+			Err(e)
+		} else {
+			Ok(IdGuard::new(peers, peer, req_id))
+		}
 	}
 
 	/// Handle a packet using the given io context.
@@ -973,17 +978,22 @@ impl LightProtocol {
 			let mut stream = RlpStream::new_list(3);
 			let cur_credits = peer.local_credits.current();
 			stream.append(&req_id).append(&cur_credits).append_list(&responses);
-			stream.out()
+			let out = stream.out();
+			trace!(target: "on_demand", "sending response {:?}", out);
+			out
 		});
 		Ok(())
 	}
 
 	// handle a packet with responses.
 	fn response(&self, peer: PeerId, io: &IoContext, raw: &Rlp) -> Result<(), Error> {
+		trace!(target: "on_demand", "peer {} responded with a RLP payload: {:?}", peer, raw);
 		let (req_id, responses) = {
+
 			let id_guard = self.pre_verify_response(peer, &raw)?;
-			let responses: Vec<Response> = raw.list_at(2)?;
-			(id_guard.defuse(), responses)
+			let response: Vec<Response> = raw.list_at(2)?;
+
+			(id_guard.defuse(), response)
 		};
 
 		for handler in &self.handlers {

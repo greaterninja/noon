@@ -579,18 +579,30 @@ impl Response {
 
 impl Decodable for Response {
 	fn decode(rlp: &Rlp) -> Result<Self, DecoderError> {
-		match rlp.val_at::<Kind>(0)? {
-			Kind::Headers => Ok(Response::Headers(rlp.val_at(1)?)),
-			Kind::HeaderProof => Ok(Response::HeaderProof(rlp.val_at(1)?)),
-			Kind::TransactionIndex => Ok(Response::TransactionIndex(rlp.val_at(1)?)),
-			Kind::Receipts => Ok(Response::Receipts(rlp.val_at(1)?)),
-			Kind::Body => Ok(Response::Body(rlp.val_at(1)?)),
-			Kind::Account => Ok(Response::Account(rlp.val_at(1)?)),
-			Kind::Storage => Ok(Response::Storage(rlp.val_at(1)?)),
-			Kind::Code => Ok(Response::Code(rlp.val_at(1)?)),
-			Kind::Execution => Ok(Response::Execution(rlp.val_at(1)?)),
-			Kind::Signal => Ok(Response::Signal(rlp.val_at(1)?)),
-		}
+		trace!(target: "on_demand", "try decode response: {:?}", rlp);
+		let x = match rlp.val_at::<Kind>(0) {
+			Ok(Kind::Headers) => {
+				if rlp.val_at::<Response>(1).is_err() {
+					trace!(target: "on_demand", "header RLP decoding failed");
+				}
+				Ok(Response::Headers(rlp.val_at(1)?))
+			}
+			Ok(Kind::HeaderProof) => Ok(Response::HeaderProof(rlp.val_at(1)?)),
+			Ok(Kind::TransactionIndex) => Ok(Response::TransactionIndex(rlp.val_at(1)?)),
+			Ok(Kind::Receipts) => Ok(Response::Receipts(rlp.val_at(1)?)),
+			Ok(Kind::Body) => Ok(Response::Body(rlp.val_at(1)?)),
+			Ok(Kind::Account) => Ok(Response::Account(rlp.val_at(1)?)),
+			Ok(Kind::Storage) => Ok(Response::Storage(rlp.val_at(1)?)),
+			Ok(Kind::Code) => Ok(Response::Code(rlp.val_at(1)?)),
+			Ok(Kind::Execution) => Ok(Response::Execution(rlp.val_at(1)?)),
+			Ok(Kind::Signal) => Ok(Response::Signal(rlp.val_at(1)?)),
+			Err(err) => {
+                            trace!(target: "on_demand", "Response::Kind could not be decoded");
+                            return Err(err);
+                        }
+		};
+		trace!(target: "on_demand", "decode response SUCCESS: {:?}", x);
+		x
 	}
 }
 
@@ -682,7 +694,7 @@ pub mod header {
 		 pub inner: Option<IncompleteInner>,
 	}
 
-        /// ....
+	/// ....
 	#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
 	pub struct IncompleteInner {
 		/// Start block.
@@ -705,22 +717,22 @@ pub mod header {
 			match self.inner.as_ref().map(|s| &s.start) {
 				Some(Field::Scalar(_)) => Ok(()),
 				Some(Field::BackReference(req, idx)) => f(*req, *idx, OutputKind::Hash).or_else(|_| f(*req, *idx, OutputKind::Number)),
-                                _ => Err(NoSuchOutput),
+			_ => Err(NoSuchOutput),
 			}
 		}
 
 		fn note_outputs<F>(&self, _: F) where F: FnMut(usize, OutputKind) { }
 
 		fn fill<F>(&mut self, oracle: F) where F: Fn(usize, usize) -> Result<Output, NoSuchOutput> {
-                        self.inner.as_mut().map(|s| {
-			    if let Field::BackReference(req, idx) = s.start {
-				s.start = match oracle(req, idx) {
-					Ok(Output::Hash(hash)) => Field::Scalar(hash.into()),
-					Ok(Output::Number(num)) => Field::Scalar(num.into()),
-					Err(_) => Field::BackReference(req, idx),
+			self.inner.as_mut().map(|s| {
+				if let Field::BackReference(req, idx) = s.start {
+					s.start = match oracle(req, idx) {
+						Ok(Output::Hash(hash)) => Field::Scalar(hash.into()),
+						Ok(Output::Number(num)) => Field::Scalar(num.into()),
+						Err(_) => Field::BackReference(req, idx),
+					}
 				}
-			    }      
-                        });
+			});
 		}
 
 		fn complete(self) -> Result<Self::Complete, NoSuchOutput> {
@@ -737,8 +749,8 @@ pub mod header {
 			})
 		}
 
-		fn adjust_refs<F>(&mut self, mapping: F) where F: FnMut(usize) -> usize {	
-                    self.inner.as_mut().map(|s| s.start.adjust_req(mapping));
+		fn adjust_refs<F>(&mut self, mapping: F) where F: FnMut(usize) -> usize {
+			self.inner.as_mut().map(|s| s.start.adjust_req(mapping));
 		}
 	}
 
@@ -762,6 +774,16 @@ pub mod header {
 		pub headers: Vec<encoded::Header>,
 	}
 
+	impl Default for Response {
+		fn default() -> Self {
+                        use ethcore::header;
+                        
+                        let h = header::Header::default().encoded();
+
+			Self { headers: vec![h] }
+		}
+	}
+
 	impl super::ResponseLike for Response {
 		/// Fill reusable outputs by writing them into the function.
 		fn fill_outputs<F>(&self, _: F) where F: FnMut(usize, Output) { }
@@ -771,7 +793,8 @@ pub mod header {
 		fn decode(rlp: &Rlp) -> Result<Self, DecoderError> {
 			use ethcore::header::Header as FullHeader;
 
-			let mut headers = Vec::new();
+			trace!(target: "on_demand", "try decoding header_respons {:?}", rlp); 
+                        let mut headers = Vec::new();
 
 			for item in rlp.iter() {
 				// check that it's a valid encoding.
@@ -786,8 +809,10 @@ pub mod header {
 
 	impl Encodable for Response {
 		fn rlp_append(&self, s: &mut RlpStream) {
-			s.begin_list(self.headers.len());
-			for header in &self.headers {
+                        s.begin_list(self.headers.len());
+
+                        for header in self.headers.iter().skip(2) {
+                                trace!(target: "on_demand", "encode header: {:?} raw_rlp: {:?}", header, header.rlp().as_raw());
 				s.append_raw(header.rlp().as_raw(), 1);
 			}
 		}
@@ -1120,6 +1145,8 @@ pub mod block_body {
 		fn decode(rlp: &Rlp) -> Result<Self, DecoderError> {
 			use ethcore::header::Header as FullHeader;
 			use transaction::UnverifiedTransaction;
+
+                        trace!(target: "on_demand", "try decode block body: {:?}", rlp);
 
 			// check body validity.
 			let _: Vec<UnverifiedTransaction> = rlp.list_at(0)?;

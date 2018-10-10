@@ -245,7 +245,7 @@ impl Pending {
 		self.bad_responses.len() > total_peers / 2
 	}
 
-	// returning no reponse, it will result in an error.
+	// returning no response, it will result in an error.
 	// self is consumed on purpose.
 	fn no_response(self) {
 		trace!(target: "on_demand", "Dropping a pending query (no reply) at query #{}", self.query_id_history.len());
@@ -617,10 +617,13 @@ impl Handler for OnDemand {
 	}
 
 	fn on_responses(&self, ctx: &EventContext, req_id: ReqId, responses: &[basic_request::Response]) {
+		// the req_id was not found in the pending request
 		let mut pending = match self.in_transit.write().remove(&req_id) {
 			Some(req) => req,
 			None => return,
 		};
+
+		trace!(target: "on_demand", "responses: {:?}", responses);
 
 		if responses.is_empty() {
 			if pending.remaining_query_count == 0 {

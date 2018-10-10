@@ -59,7 +59,7 @@ pub trait Provider: Send + Sync {
 		use request::HashOrNumber;
 
 		if req.max == 0 { 
-			return request::HeadersResponse { headers: Vec::new() } 
+			return Default::default();
 		};
 
 		let best_num = self.chain_info().best_block_number;
@@ -69,11 +69,11 @@ pub trait Provider: Send + Sync {
 				let header = self.block_header(BlockId::Hash(hash));
 				if header.is_empty() {
 					trace!(target: "pip_provider", "Unknown block hash {} requested", hash);
-					return request::HeadersResponse { headers: Vec::new() } ;
+					return Default::default();
 				}
 				else {
 					let num = header.number();
-					let canon_hash = self.block_header(BlockId::Number(num)).hash();
+					let _canon_hash = self.block_header(BlockId::Number(num)).hash();
 
 					if req.max <= 1 {
 						// Non-canonical header or single header requested.
@@ -156,8 +156,19 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 	}
 
 	fn block_header(&self, id: BlockId) -> encoded::Header {
-		let block_header = ClientBlockInfo::block_header(self, id).unwrap_or_default();
-		debug!(target: "pip_provider", "block_header resonse: block_id: {:?} was succesful {}", id, !block_header.is_empty());
+                let mut is_success = true;
+                let block_header = ClientBlockInfo::block_header(self, id).unwrap_or_else(|| {
+                    use ethcore::header;
+                    use rlp;
+                        
+                    let empty = rlp::EMPTY_LIST_RLP.to_vec();
+                    let mut rlp = rlp::RlpStream::new_list(1);
+                    rlp.append_raw(&empty, 1);
+
+                    is_success = false;
+                    encoded::Header::new(rlp.out())
+                });
+		debug!(target: "pip_provider", "block_header response: block_id: {:?} was succesful {}", id, !block_header.is_empty());
 		trace!(target: "pip_provider", "block_header {:?} ", block_header);
 		block_header
 	}
@@ -178,9 +189,22 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 	}
 
 	fn block_body(&self, req: request::CompleteBodyRequest) -> request::BodyResponse {
+		let mut is_success = true;
 		let block_body = BlockChainClient::block_body(self, BlockId::Hash(req.hash))
-			.map_or_else(Default::default, |body| request::BodyResponse { body });
-		debug!(target: "pip_provider", "block_body response: request_hash {}: was succesful: {}", req.hash, !block_body.body.is_empty());
+			.map_or_else(|| {
+				use ethcore;
+				use rlp;
+				is_success = false;
+				
+				let empty = rlp::EMPTY_LIST_RLP.to_vec();
+
+				let mut body = rlp::RlpStream::new_list(2);
+				body.append_raw(&empty, 1);
+				body.append_raw(&empty, 1);
+				
+				request::BodyResponse { body: ethcore::encoded::Body::new(body.out()) }
+			}, |body| request::BodyResponse { body });
+		debug!(target: "pip_provider", "block_body response: request_hash {}: was succesful: {}", req.hash, is_success);
 		trace!(target: "pip_provider", "block_body {:?}", block_body);
 		block_body
 	}
