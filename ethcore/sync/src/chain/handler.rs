@@ -61,6 +61,8 @@ use super::{
 	TRANSACTIONS_PACKET,
 };
 
+static CONTINUE_SYNC_ENV_VAR_NAME: &'static str = "CONTINUE_SYNC";
+
 /// The Chain Sync Handler: handles responses from peers
 pub struct SyncHandler;
 
@@ -100,7 +102,7 @@ impl SyncHandler {
 				sync.deactivate_peer(io, peer);
 			},
 			Err(DownloaderImportError::Ignored) => {
-				if ::std::env::var("DEFAULT").is_ok() {
+				if ::std::env::var(CONTINUE_SYNC_ENV_VAR_NAME).is_ok() {
 					sync.sync_peer(io, peer, false);
 				}
 			},
@@ -110,7 +112,7 @@ impl SyncHandler {
 			},
 		}
 		// give tasks to other peers
-		if ::std::env::var("DEFAULT").is_ok() {
+		if ::std::env::var(CONTINUE_SYNC_ENV_VAR_NAME).is_ok() {
 			sync.continue_sync(io);
 		}
 	}
@@ -145,7 +147,7 @@ impl SyncHandler {
 				}
 			}
 
-			if ::std::env::var("DEFAULT").is_ok() {
+			if ::std::env::var(CONTINUE_SYNC_ENV_VAR_NAME).is_ok() {
 				sync.continue_sync(io);
 			}
 		}

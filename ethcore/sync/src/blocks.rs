@@ -28,6 +28,8 @@ use transaction::UnverifiedTransaction;
 
 known_heap_size!(0, HeaderId);
 
+static LIMIT_DRAINED_BLOCKS_ENV_VARNAME: &'static str = "LIMIT_DRAINED_BLOCKS";
+
 const MAX_DRAINED_BLOCKS: usize = 2_000;
 
 #[derive(PartialEq, Debug, Clone)]
@@ -353,7 +355,7 @@ impl BlockCollection {
 			let mut head = self.head;
 
 			while let Some(h) = head {
-				if blocks.len() > MAX_DRAINED_BLOCKS {
+				if ::std::env::var(LIMIT_DRAINED_BLOCKS_ENV_VARNAME).is_ok() && blocks.len() > MAX_DRAINED_BLOCKS {
 					break;
 				}
 
