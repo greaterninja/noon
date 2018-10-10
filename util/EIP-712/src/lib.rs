@@ -28,6 +28,9 @@ extern crate linked_hash_set;
 extern crate lunarity;
 extern crate toolshed;
 extern crate regex;
+extern crate validator;
+#[macro_use]
+extern crate validator_derive;
 #[macro_use]
 extern crate failure_derive;
 #[macro_use]

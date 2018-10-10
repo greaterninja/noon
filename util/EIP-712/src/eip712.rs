@@ -16,17 +16,16 @@
 
 //! EIP712 structs
 use serde_json::{Value};
-use serde::de;
-use std::fmt;
 use std::collections::HashMap;
 use ethereum_types::{U256, H256, Address};
 use regex::Regex;
+use validator::Validate;
 
 pub(crate) type MessageTypes = HashMap<String, Vec<FieldType>>;
 
 lazy_static! {
-	// match solidity identifier with the addition of '[' & ']'
-	static ref TYPE_REGEX: Regex = Regex::new(r"^[a-zA-Z_$][a-zA-Z_$0-9\[\]]*$").unwrap();
+	// match solidity identifier with the addition of '[(\d)*]*'
+	static ref TYPE_REGEX: Regex = Regex::new(r"^[a-zA-Z_$][a-zA-Z_$0-9]*(\[[0-9]*\])*$").unwrap();
 	static ref IDENT_REGEX: Regex = Regex::new(r"^[a-zA-Z_$][a-zA-Z_$0-9]*$").unwrap();
 }
 
@@ -52,69 +51,13 @@ pub struct EIP712 {
 	pub(crate) domain: EIP712Domain,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Validate, Debug, Clone)]
 pub(crate) struct FieldType {
-	#[serde(deserialize_with = "deserialize_ident")]
+	#[validate(regex = "IDENT_REGEX")]
 	pub name: String,
 	#[serde(rename = "type")]
-	#[serde(deserialize_with = "deserialize_type")]
+	#[validate(regex = "TYPE_REGEX")]
 	pub type_: String,
-}
-
-fn deserialize_ident<'de, D>(deserializer: D) -> Result<String, D::Error>
-	where
-		D: de::Deserializer<'de>,
-{
-	struct Visitor;
-
-	impl<'de> de::Visitor<'de> for Visitor {
-		type Value = String;
-
-		fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-			formatter.write_str("A valid solidity identifier")
-		}
-
-		fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-			where
-				E: de::Error,
-		{
-			if !IDENT_REGEX.is_match(v) {
-				return Err(E::custom(format!("Invalid Identifier '{}'", v)))
-			}
-
-			Ok(v.to_owned())
-		}
-	}
-
-	deserializer.deserialize_any(Visitor)
-}
-
-fn deserialize_type<'de, D>(deserializer: D) -> Result<String, D::Error>
-	where
-		D: de::Deserializer<'de>,
-{
-	struct Visitor;
-
-	impl<'de> de::Visitor<'de> for Visitor {
-		type Value = String;
-
-		fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-			formatter.write_str("A valid solidity type name")
-		}
-
-		fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-			where
-				E: de::Error,
-		{
-			if !TYPE_REGEX.is_match(v) {
-				return Err(E::custom(format!("Invalid Type Name '{}'", v)))
-			}
-
-			Ok(v.to_owned())
-		}
-	}
-
-	deserializer.deserialize_any(Visitor)
 }
 
 #[cfg(test)]
@@ -124,12 +67,12 @@ mod tests {
 
 	#[test]
 	fn test_ident_regex() {
-		let test_cases = vec!["unint bytes32", "Seun\\[]", ""];
+		let test_cases = vec!["unint bytes32", "Seun\\[]", "byte[]uint", "byte[7[]uint][]"];
 		for case in test_cases {
-			assert_eq!(IDENT_REGEX.is_match(case), false)
+			assert_eq!(TYPE_REGEX.is_match(case), false)
 		}
 
-		let test_cases = vec!["bytes32", "Foo[]", "bytes1", "bytes32[][]"];
+		let test_cases = vec!["bytes32", "Foo[]", "bytes1", "bytes32[][]", "byte[9]", "contents"];
 		for case in test_cases {
 			assert_eq!(TYPE_REGEX.is_match(case), true)
 		}

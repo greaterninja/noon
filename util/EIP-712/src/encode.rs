@@ -39,12 +39,7 @@ fn build_dependencies<'a>(message_type: &'a str, message_types: &'a MessageTypes
 	types.insert(message_type);
 	let mut deps = LinkedHashSet::new();
 
-	loop {
-		let item = match types.pop_back() {
-			None => return Some(deps),
-			Some(item) => item,
-		};
-
+	while let Some(item) = types.pop_back() {
 		if let Some(fields) = message_types.get(item) {
 			deps.insert(item);
 
@@ -56,7 +51,9 @@ fn build_dependencies<'a>(message_type: &'a str, message_types: &'a MessageTypes
 				types.insert(&*field.type_);
 			}
 		}
-	}
+	};
+
+	return Some(deps)
 }
 
 fn encode_type(message_type: &str, message_types: &MessageTypes) -> Result<String> {
@@ -123,28 +120,17 @@ fn encode_data(
 			keccak(tokens).0.to_vec()
 		}
 
-		Type::Bytes(size) if *size == 32 => {
+		Type::Bytes(size) => {
 			let string = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
 			if string.len() < 2 {
 				return Err(ErrorKind::HexParseError(
 					format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
 				)?
 			}
-			let string = string.get(2..).expect("line 188 checks for length; qed");
-			let bytes = H256::from_str(string).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
-			let hash = (&keccak(&bytes)).to_vec();
-			encode(&[EthAbiToken::FixedBytes(hash)])
-		}
-
-		Type::Bytes(size) if *size < 32 => {
-			let string = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
-			if string.len() < 2 {
-				return Err(ErrorKind::HexParseError(
-					format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
-				)?
+			let mut bytes = H256::from_str(&string[2..]).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
+			if *size == 32 {
+				bytes = keccak(&bytes);
 			}
-			let string = string.get(2..).expect("line 200 checks for length; qed");
-			let bytes = H256::from_str(string).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
 			encode(&[EthAbiToken::FixedBytes(bytes.to_vec())])
 		}
 
@@ -161,9 +147,7 @@ fn encode_data(
 			if addr.len() != 42 {
 				return Err(ErrorKind::InvalidAddressLength(addr.len()))?;
 			}
-			// we've checked the address length, this is safe
-			let addr = addr.get(2..).unwrap();
-			let address = EthAddress::from_str(addr).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
+			let address = EthAddress::from_str(&addr[2..]).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
 			encode(&[EthAbiToken::Address(address)])
 		}
 
@@ -177,8 +161,7 @@ fn encode_data(
 							format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
 						)?
 					}
-					let string = string.get(2..).expect("line 200 checks for length");
-					U256::from_str(string).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?
+					U256::from_str(&string[2..]).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?
 				}
 				_ => return Err(serde_error("int/uint", field_name))?
 			};

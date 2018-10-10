@@ -58,6 +58,7 @@ impl Parser {
 		}
 	}
 
+	/// the type string is being validated before it's parsed.
 	pub fn parse_type(&self, field_type: &str) -> Result<Type> {
 		#[derive(PartialEq)]
 		enum State { Open, Close }
@@ -67,11 +68,7 @@ impl Parser {
 		let mut state = State::Close;
 		let mut array_depth = 0;
 
-		loop {
-			if lexer.token == Token::EndOfProgram {
-				break
-			}
-
+		while lexer.token != Token::EndOfProgram  {
 			let type_ = match lexer.token {
 				Token::Identifier => Type::Custom(lexer.token_as_str().to_owned()),
 				Token::TypeByte => Type::Bytes(lexer.type_size.0),
@@ -84,7 +81,7 @@ impl Parser {
 					lexer.consume();
 					continue;
 				},
-				Token::BracketOpen => {
+				Token::BracketOpen if token.is_some() && state == State::Close => {
 					state = State::Open;
 					lexer.consume();
 					continue
@@ -92,7 +89,7 @@ impl Parser {
 				Token::BracketClose if array_depth < 10 => {
 					if state == State::Open && token.is_some() {
 						state = State::Close;
-						token = Some(Type::Array(Box::new(token.expect("line 78 checks for `Some`"))));
+						token = Some(Type::Array(Box::new(token.expect("if statement checks for some; qed"))));
 						lexer.consume();
 						array_depth += 1;
 						continue
@@ -130,5 +127,12 @@ mod tests {
 		let parser = Parser::new();
 		let source = "byte[][][7][][][][][][][][]";
 		assert_eq!(parser.parse_type(source).is_err(), true);
+	}
+
+	#[test]
+	fn test_malformed_array_type() {
+		let parser = Parser::new();
+		let source = "byte[7[]uint][]";
+		assert_eq!(parser.parse_type(source).is_err(), true)
 	}
 }
