@@ -113,66 +113,68 @@ impl Provider for TestProvider {
 		None
 	}
 
-	fn block_header(&self, id: BlockId) -> Option<encoded::Header> {
+	fn block_header(&self, id: BlockId) -> encoded::Header {
 		self.0.client.block_header(id)
 	}
 
 	fn transaction_index(&self, req: request::CompleteTransactionIndexRequest)
-		-> Option<request::TransactionIndexResponse>
+		-> request::TransactionIndexResponse
 	{
-		Some(request::TransactionIndexResponse {
-			num: 100,
-			hash: req.hash,
-			index: 55,
-		})
+		request::TransactionIndexResponse {
+			inner: Some(TransactionIndexResponseInner {
+					num: 100,
+					hash: req.hash,
+					index: 55,
+			}),
+		}
 	}
 
-	fn block_body(&self, req: request::CompleteBodyRequest) -> Option<request::BodyResponse> {
+	fn block_body(&self, req: request::CompleteBodyRequest) -> request::BodyResponse {
 		self.0.client.block_body(req)
 	}
 
-	fn block_receipts(&self, req: request::CompleteReceiptsRequest) -> Option<request::ReceiptsResponse> {
+	fn block_receipts(&self, req: request::CompleteReceiptsRequest) -> request::ReceiptsResponse {
 		self.0.client.block_receipts(req)
 	}
 
-	fn account_proof(&self, req: request::CompleteAccountRequest) -> Option<request::AccountResponse> {
+	fn account_proof(&self, req: request::CompleteAccountRequest) -> request::AccountResponse {
 		// sort of a leaf node
 		let mut stream = RlpStream::new_list(2);
 		stream.append(&req.address_hash).append_empty_data();
-		Some(AccountResponse {
+		AccountResponse {
 			proof: vec![stream.out()],
 			balance: 10.into(),
 			nonce: 100.into(),
 			code_hash: Default::default(),
 			storage_root: Default::default(),
-		})
+		}
 	}
 
-	fn storage_proof(&self, req: request::CompleteStorageRequest) -> Option<request::StorageResponse> {
-		Some(StorageResponse {
+	fn storage_proof(&self, req: request::CompleteStorageRequest) -> request::StorageResponse {
+		StorageResponse {
 			proof: vec![::rlp::encode(&req.key_hash)],
 			value: req.key_hash | req.address_hash,
-		})
+		}
 	}
 
-	fn contract_code(&self, req: request::CompleteCodeRequest) -> Option<request::CodeResponse> {
-		Some(CodeResponse {
+	fn contract_code(&self, req: request::CompleteCodeRequest) -> request::CodeResponse {
+		CodeResponse {
 			code: req.block_hash.iter().chain(req.code_hash.iter()).cloned().collect(),
-		})
+		}
 	}
 
-	fn header_proof(&self, _req: request::CompleteHeaderProofRequest) -> Option<request::HeaderProofResponse> {
-		None
+	fn header_proof(&self, _req: request::CompleteHeaderProofRequest) -> request::HeaderProofResponse {
+		HeaderProofResponse::empty()
 	}
 
-	fn transaction_proof(&self, _req: request::CompleteExecutionRequest) -> Option<request::ExecutionResponse> {
-		None
+	fn transaction_proof(&self, _req: request::CompleteExecutionRequest) -> request::ExecutionResponse {
+		ExecutionResponse::empty()
 	}
 
-	fn epoch_signal(&self, _req: request::CompleteSignalRequest) -> Option<request::SignalResponse> {
-		Some(request::SignalResponse {
+	fn epoch_signal(&self, _req: request::CompleteSignalRequest) -> request::SignalResponse {
+		request::SignalResponse {
 			signal: vec![1, 2, 3, 4],
-		})
+		}
 	}
 
 	fn transactions_to_propagate(&self) -> Vec<PendingTransaction> {
@@ -287,10 +289,12 @@ fn credit_overflow() {
 
 	// 1 billion requests is far too many for the default flow params.
 	let requests = encode_single(Request::Headers(IncompleteHeadersRequest {
-		start: HashOrNumber::Number(1).into(),
-		max: 1_000_000_000,
-		skip: 0,
-		reverse: false,
+		inner: Some(IncompleteHeaderRequestInner {
+			start: HashOrNumber::Number(1).into(),
+			max: 1_000_000_000,
+			skip: 0,
+			reverse: false,
+		}),
 	}));
 	let request = make_packet(111, &requests);
 
@@ -321,10 +325,12 @@ fn get_block_headers() {
 	}
 
 	let request = Request::Headers(IncompleteHeadersRequest {
-		start: HashOrNumber::Number(1).into(),
-		max: 10,
-		skip: 0,
-		reverse: false,
+		inner: Some(IncompleteHeaderRequestInner {
+			start: HashOrNumber::Number(1).into(),
+			max: 10,
+			skip: 0,
+			reverse: false,
+		}),
 	});
 
 	let req_id = 111;
@@ -333,7 +339,7 @@ fn get_block_headers() {
 	let request_body = make_packet(req_id, &requests);
 
 	let response = {
-		let headers: Vec<_> = (0..10).map(|i| provider.client.block_header(BlockId::Number(i + 1)).unwrap()).collect();
+		let headers: Vec<_> = (0..10).map(|i| provider.client.block_header(BlockId::Number(i + 1))).collect();
 		assert_eq!(headers.len(), 10);
 
 		let new_creds = *flow_params.limit() - flow_params.compute_cost_multi(requests.requests()).unwrap();
@@ -374,13 +380,13 @@ fn get_block_bodies() {
 	let mut bodies = Vec::new();
 
 	for i in 0..10 {
-		let hash = provider.client.block_header(BlockId::Number(i)).unwrap().hash();
+		let hash = provider.client.block_header(BlockId::Number(i)).hash();
 		builder.push(Request::Body(IncompleteBodyRequest {
 			hash: hash.into(),
 		})).unwrap();
 		bodies.push(Response::Body(provider.client.block_body(CompleteBodyRequest {
 			hash: hash,
-		}).unwrap()));
+		})));
 	}
 	let req_id = 111;
 	let requests = builder.build();
@@ -421,7 +427,7 @@ fn get_block_receipts() {
 	// find the first 10 block hashes starting with `f` because receipts are only provided
 	// by the test client in that case.
 	let block_hashes: Vec<H256> = (0..1000)
-		.map(|i| provider.client.block_header(BlockId::Number(i)).unwrap().hash())
+		.map(|i| provider.client.block_header(BlockId::Number(i)).hash())
 		.filter(|hash| format!("{}", hash).starts_with("0xf"))
 		.take(10)
 		.collect();
@@ -432,7 +438,7 @@ fn get_block_receipts() {
 		builder.push(Request::Receipts(IncompleteReceiptsRequest { hash: hash.into() })).unwrap();
 		receipts.push(Response::Receipts(provider.client.block_receipts(CompleteReceiptsRequest {
 			hash: hash
-		}).unwrap()));
+		})));
 	}
 
 	let req_id = 111;
@@ -493,12 +499,12 @@ fn get_state_proofs() {
 			Response::Account(provider.account_proof(CompleteAccountRequest {
 				block_hash: H256::default(),
 				address_hash: key1,
-			}).unwrap()),
+			})),
 			Response::Storage(provider.storage_proof(CompleteStorageRequest {
 				block_hash: H256::default(),
 				address_hash: key1,
 				key_hash: key2,
-			}).unwrap()),
+			})),
 		];
 
 		let new_creds = *flow_params.limit() - flow_params.compute_cost_multi(requests.requests()).unwrap();
@@ -635,17 +641,20 @@ fn proof_of_execution() {
 		let new_creds = limit - cost;
 
 		let mut response_stream = RlpStream::new_list(3);
-		response_stream.append(&req_id).append(&new_creds).begin_list(0);
 
+		// [[ 192 ]]
+		let rlp_enc_empty = [197, 196, 8, 194, 129, 192];
+
+		response_stream.append(&req_id).append(&new_creds).append_raw(&rlp_enc_empty, 1);
 		response_stream.out()
 	};
 
 	let expected = Expect::Respond(packet::RESPONSE, response);
-	proto.handle_packet(&expected, 1, packet::REQUEST, &request_body);
+        proto.handle_packet(&expected, 1, packet::REQUEST, &request_body);
 
 	// next: way too much requested gas.
 	if let Request::Execution(ref mut req) = request {
-		req.gas = 100_000_000.into();
+			req.gas = 100_000_000.into();
 	}
 	let req_id = 113;
 	let requests = encode_single(request.clone());
@@ -669,10 +678,12 @@ fn id_guard() {
 	let req_id_2 = ReqId(1111);
 
 	let req = encode_single(Request::Headers(IncompleteHeadersRequest {
-		start: HashOrNumber::Number(5u64).into(),
-		max: 100,
-		skip: 0,
-		reverse: false,
+		inner: Some(IncompleteHeaderRequestInner {
+			start: HashOrNumber::Number(5u64).into(),
+			max: 100,
+			skip: 0,
+			reverse: false,
+		}),
 	}));
 
 	let peer_id = 9876;
@@ -757,16 +768,18 @@ fn get_transaction_index() {
 	let key1: H256 = U256::from(11223344).into();
 
 	let request = Request::TransactionIndex(IncompleteTransactionIndexRequest {
-		hash: key1.into(),
+		hash: Some(key1.into()),
 	});
 
 	let requests = encode_single(request.clone());
 	let request_body = make_packet(req_id, &requests);
 	let response = {
 		let response = vec![Response::TransactionIndex(TransactionIndexResponse {
-			num: 100,
-			hash: key1,
-			index: 55,
+			inner: Some(TransactionIndexResponseInner {
+				num: 100,
+				hash: key1,
+				index: 55,
+			}),
 		})];
 
 		let new_creds = *flow_params.limit() - flow_params.compute_cost_multi(requests.requests()).unwrap();

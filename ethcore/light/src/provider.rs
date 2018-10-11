@@ -59,7 +59,7 @@ pub trait Provider: Send + Sync {
 		use request::HashOrNumber;
 
 		if req.max == 0 { 
-			return Default::default();
+			return request::HeadersResponse::empty();
 		};
 
 		let best_num = self.chain_info().best_block_number;
@@ -69,7 +69,7 @@ pub trait Provider: Send + Sync {
 				let header = self.block_header(BlockId::Hash(hash));
 				if header.is_empty() {
 					trace!(target: "pip_provider", "Unknown block hash {} requested", hash);
-					return Default::default();
+					return request::HeadersResponse::empty();
 				}
 				else {
 					let num = header.number();
@@ -156,19 +156,12 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 	}
 
 	fn block_header(&self, id: BlockId) -> encoded::Header {
-                let mut is_success = true;
-                let block_header = ClientBlockInfo::block_header(self, id).unwrap_or_else(|| {
-                    use ethcore::header;
-                    use rlp;
-                        
-                    let empty = rlp::EMPTY_LIST_RLP.to_vec();
-                    let mut rlp = rlp::RlpStream::new_list(1);
-                    rlp.append_raw(&empty, 1);
-
-                    is_success = false;
-                    encoded::Header::new(rlp.out())
-                });
-		debug!(target: "pip_provider", "block_header response: block_id: {:?} was succesful {}", id, !block_header.is_empty());
+		let mut is_success = true;
+		let block_header = ClientBlockInfo::block_header(self, id).unwrap_or_else(|| {
+			is_success = false;
+			encoded::Header::empty()
+		});
+		debug!(target: "pip_provider", "block_header response: block_id: {:?} was succesful {}", id, is_success);
 		trace!(target: "pip_provider", "block_header {:?} ", block_header);
 		block_header
 	}
@@ -182,7 +175,9 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 				hash: receipt.block_hash,
 				index: receipt.transaction_index as u64,
 			}),
-		}).unwrap_or_default();
+		})
+		.unwrap_or_else(|| request::TransactionIndexResponse::empty());
+
 		debug!(target: "pip_provider", "TransactionReceipt response: req.hash {} was succesful: {}", req.hash, transaction_receipt.inner.is_some());
 		trace!(target: "pip_provider", "transaction_receipt: {:?} ", transaction_receipt);
 		transaction_receipt
@@ -192,17 +187,8 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 		let mut is_success = true;
 		let block_body = BlockChainClient::block_body(self, BlockId::Hash(req.hash))
 			.map_or_else(|| {
-				use ethcore;
-				use rlp;
 				is_success = false;
-				
-				let empty = rlp::EMPTY_LIST_RLP.to_vec();
-
-				let mut body = rlp::RlpStream::new_list(2);
-				body.append_raw(&empty, 1);
-				body.append_raw(&empty, 1);
-				
-				request::BodyResponse { body: ethcore::encoded::Body::new(body.out()) }
+				request::BodyResponse::empty()
 			}, |body| request::BodyResponse { body });
 		debug!(target: "pip_provider", "block_body response: request_hash {}: was succesful: {}", req.hash, is_success);
 		trace!(target: "pip_provider", "block_body {:?}", block_body);
@@ -211,7 +197,7 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 
 	fn block_receipts(&self, req: request::CompleteReceiptsRequest) -> request::ReceiptsResponse {
 		let block_receipt = BlockChainClient::encoded_block_receipts(self, &req.hash)
-			.map_or_else(Default::default, |receipt| request::ReceiptsResponse { receipts: ::rlp::decode_list(&receipt) });
+			.map_or_else(|| request::ReceiptsResponse::empty(), |receipt| request::ReceiptsResponse { receipts: ::rlp::decode_list(&receipt) });
 		debug!(target: "pip_provider", "block_receipts response: request_hash {}: was succesful: {}", req.hash, !block_receipt.receipts.is_empty());
 		trace!(target: "pip_provider", "block_receipts {:?}", block_receipt);
 		block_receipt
@@ -219,7 +205,7 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 
 	fn account_proof(&self, req: request::CompleteAccountRequest) -> request::AccountResponse {
 		let account_proof = self.prove_account(req.address_hash, BlockId::Hash(req.block_hash))
-			.map_or_else(Default::default, |(proof, acc)| {
+			.map_or_else(|| request::AccountResponse::empty(), |(proof, acc)| {
 				request::AccountResponse {
 					proof,
 					nonce: acc.nonce,
@@ -235,7 +221,7 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 
 	fn storage_proof(&self, req: request::CompleteStorageRequest) -> request::StorageResponse {
 		let storage_proof = self.prove_storage(req.address_hash, req.key_hash, BlockId::Hash(req.block_hash))
-			.map_or_else(Default::default, |(proof, item) | {
+			.map_or_else(|| request::StorageResponse::empty(), |(proof, item) | {
 				request::StorageResponse {
 					proof,
 					value: item,
@@ -249,7 +235,7 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 
 	fn contract_code(&self, req: request::CompleteCodeRequest) -> request::CodeResponse {
 		let contract_code = self.state_data(&req.code_hash)
-			.map_or_else(Default::default, |code| request::CodeResponse { code });
+			.map_or_else(|| request::CodeResponse::empty(), |code| request::CodeResponse { code });
 		debug!(target: "pip_provider", "contract_code response for (block_hash {} code_hash {}) was successful: {}", 
 				req.block_hash, req.code_hash, !contract_code.code.is_empty());
 		trace!(target: "pip_provider", "contrace_code{:?}", contract_code);
@@ -261,7 +247,7 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 			Some(cht_num) => cht_num,
 			None => {
 				debug!(target: "pip_provider", "Requested CHT proof with invalid block number");
-				return Default::default()
+				return request::HeaderProofResponse::empty();
 			}
 		};
 
@@ -295,7 +281,7 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 				Some(cht) => cht,
 				None => {
 					debug!(target: "pip_provider", "Couldn't build CHT with cht_number: {}", cht_number);
-					return Default::default()
+					return request::HeaderProofResponse::empty()
 				}
 			}
 		};
@@ -309,10 +295,10 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 				hash: needed_hdr.hash(),
 				td: needed_td,
 			},
-			Ok(None) => Default::default(),
+			Ok(None) => request::HeaderProofResponse::empty(),
 			Err(e) => {
 				debug!(target: "pip_provider", "Error looking up number in freshly-created CHT: {}", e);
-				Default::default()
+				request::HeaderProofResponse::empty()
 			}
 		};
 		debug!(target: "pip_provider", "CHT proof is success: {}", !cht_proof.proof.is_empty());
@@ -328,7 +314,7 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 			Some(nonce) => nonce,
 			None => {
 				debug!(target: "pip_provider", "Couldn't find nonce in the execution proof");
-				return Default::default();
+				return request::ExecutionResponse::empty();
 			}
 		};
 		let transaction = Transaction {
@@ -341,9 +327,9 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 		}.fake_sign(req.from);
 
 		let transaction_proof = self.prove_transaction(transaction, id)
-			.map_or_else(Default::default, |(_, proof)| request::ExecutionResponse { items: proof });
+			.map_or_else(|| request::ExecutionResponse::empty(), |(_, proof)| request::ExecutionResponse { items: proof });
 		debug!(target: "pip_provider", "transaction_proof response (tx_hash {} from: {} value: {}) was successful: {}", 
-                       req.block_hash, req.from, req.value, !transaction_proof.items.is_empty());
+				req.block_hash, req.from, req.value, !transaction_proof.items.is_empty());
 		trace!(target: "pip_provider", "transaction_proof: {:?}", transaction_proof);
 		transaction_proof
 	}
@@ -397,7 +383,7 @@ impl<L: AsLightClient + Send + Sync> Provider for LightProvider<L> {
 	}
 
 	fn block_header(&self, _id: BlockId) -> encoded::Header {
-		Default::default()
+		encoded::Header::empty()
 	}
 
 	fn transaction_index(&self, _req: request::CompleteTransactionIndexRequest)
@@ -457,6 +443,7 @@ impl<L: AsLightClient> AsLightClient for LightProvider<L> {
 mod tests {
 	use ethcore::client::{EachBlockWith, TestBlockChainClient};
 	use super::Provider;
+        use super::request::header_proof::Response as HeaderResponse;
 
 	#[test]
 	fn cht_proof() {
@@ -467,10 +454,10 @@ mod tests {
 			num: 1500,
 		};
 
-		assert!(client.header_proof(req.clone()).is_none());
+		assert!(client.header_proof(req.clone()) == HeaderResponse::empty());
 
 		client.add_blocks(48, EachBlockWith::Nothing);
 
-		assert!(client.header_proof(req.clone()).is_some());
+		assert!(client.header_proof(req.clone()) != HeaderResponse::empty());
 	}
 }

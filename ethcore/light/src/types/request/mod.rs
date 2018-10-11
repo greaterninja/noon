@@ -774,13 +774,10 @@ pub mod header {
 		pub headers: Vec<encoded::Header>,
 	}
 
-	impl Default for Response {
-		fn default() -> Self {
-                        use ethcore::header;
-                        
-                        let h = header::Header::default().encoded();
-
-			Self { headers: vec![h] }
+	impl Response {
+		/// Empty response
+		pub fn empty() -> Self {
+			Self { headers: vec![] }
 		}
 	}
 
@@ -793,10 +790,9 @@ pub mod header {
 		fn decode(rlp: &Rlp) -> Result<Self, DecoderError> {
 			use ethcore::header::Header as FullHeader;
 
-			trace!(target: "on_demand", "try decoding header_respons {:?}", rlp); 
-                        let mut headers = Vec::new();
+			let mut headers = Vec::new();
 
-			for item in rlp.iter() {
+			for item in rlp {
 				// check that it's a valid encoding.
 				// TODO: just return full headers here?
 				let _: FullHeader = item.as_val()?;
@@ -809,10 +805,9 @@ pub mod header {
 
 	impl Encodable for Response {
 		fn rlp_append(&self, s: &mut RlpStream) {
-                        s.begin_list(self.headers.len());
+			s.begin_list(self.headers.len());
 
-                        for header in self.headers.iter().skip(2) {
-                                trace!(target: "on_demand", "encode header: {:?} raw_rlp: {:?}", header, header.rlp().as_raw());
+			for header in &self.headers {
 				s.append_raw(header.rlp().as_raw(), 1);
 			}
 		}
@@ -886,6 +881,19 @@ pub mod header_proof {
 		pub hash: H256,
 		/// The proved header's total difficulty.
 		pub td: U256,
+	}
+
+	impl Response {
+		/// Create an empty response
+		pub fn empty() -> Self {
+			let mut rlp = RlpStream::new_list(1);
+			rlp.append(&rlp::EMPTY_LIST_RLP[0]);
+			Self {
+				proof: vec![rlp.out()],
+				hash: 0.into(),
+				td: 0.into(),
+			}
+		}
 	}
 
 	impl super::ResponseLike for Response {
@@ -994,6 +1002,13 @@ pub mod transaction_index {
 		pub inner: Option<InnerResponse>,
 	}
 
+	impl Response {
+		/// empty
+		pub fn empty() -> Self {
+			Default::default()
+		}
+	}
+
 	impl super::ResponseLike for Response {
 		/// Fill reusable outputs by providing them to the function.
 		fn fill_outputs<F>(&self, mut f: F) where F: FnMut(usize, Output) {
@@ -1067,6 +1082,13 @@ pub mod block_receipts {
 		pub receipts: Vec<Receipt>
 	}
 
+	impl Response {
+		/// empty response
+		pub fn empty()-> Self {
+			Default::default()
+		}
+	}
+
 	impl super::ResponseLike for Response {
 		/// Fill reusable outputs by providing them to the function.
 		fn fill_outputs<F>(&self, _: F) where F: FnMut(usize, Output) {}
@@ -1136,6 +1158,16 @@ pub mod block_body {
 		pub body: encoded::Body,
 	}
 
+	impl Response {
+		/// empty block body response
+		pub fn empty() -> Self {
+			let mut rlp = RlpStream::new_list(2);
+			rlp.append(&rlp::EMPTY_LIST_RLP[0]);
+			rlp.append(&rlp::EMPTY_LIST_RLP[0]);
+			Self { body: encoded::Body::new(rlp.out()) }
+		}
+	}
+
 	impl super::ResponseLike for Response {
 		/// Fill reusable outputs by providing them to the function.
 		fn fill_outputs<F>(&self, _: F) where F: FnMut(usize, Output) {}
@@ -1145,8 +1177,6 @@ pub mod block_body {
 		fn decode(rlp: &Rlp) -> Result<Self, DecoderError> {
 			use ethcore::header::Header as FullHeader;
 			use transaction::UnverifiedTransaction;
-
-                        trace!(target: "on_demand", "try decode block body: {:?}", rlp);
 
 			// check body validity.
 			let _: Vec<UnverifiedTransaction> = rlp.list_at(0)?;
@@ -1254,6 +1284,13 @@ pub mod account {
 		pub code_hash: H256,
 		/// Account's storage trie root.
 		pub storage_root: H256,
+	}
+	
+	impl Response {
+		/// empty block body response
+		pub fn empty() -> Self {
+			Default::default()
+		}
 	}
 
 	impl super::ResponseLike for Response {
@@ -1365,6 +1402,13 @@ pub mod storage {
 		/// Storage value.
 		pub value: H256,
 	}
+	
+	impl Response {
+		/// empty block body response
+		pub fn empty() -> Self {
+			Default::default()
+		}
+	}
 
 	impl super::ResponseLike for Response {
 		/// Fill reusable outputs by providing them to the function.
@@ -1451,6 +1495,13 @@ pub mod contract_code {
 	pub struct Response {
 		/// The requested code.
 		pub code: Bytes,
+	}
+	
+	impl Response {
+		/// empty block body response
+		pub fn empty() -> Self {
+			Default::default()
+		}
 	}
 
 	impl super::ResponseLike for Response {
@@ -1552,6 +1603,15 @@ pub mod execution {
 	pub struct Response {
 		/// All state items (trie nodes, code) necessary to re-prove the transaction.
 		pub items: Vec<DBValue>,
+	}
+	
+	impl Response {
+		/// empty block body response
+		pub fn empty() -> Self {
+			let mut db = DBValue::new();
+			db.push(0xc0);
+			Self { items: vec![db] }
+		}
 	}
 
 	impl super::ResponseLike for Response {
@@ -1660,6 +1720,15 @@ pub mod epoch_signal {
 		/// The requested epoch signal.
 		pub signal: Bytes,
 	}
+	
+	impl Response {
+		/// empty block body response
+		pub fn empty() -> Self {
+			let mut rlp = RlpStream::new_list(1);
+			rlp.append(&rlp::EMPTY_LIST_RLP[0]);
+			Self { signal: rlp.out() }
+		}
+	}
 
 	impl super::ResponseLike for Response {
 		/// Fill reusable outputs by providing them to the function.
@@ -1721,12 +1790,27 @@ mod tests {
 	}
 
 	#[test]
+	fn empty_headers_roundtrip() {
+		let invalid_request = IncompleteHeadersRequest { inner: None };
+		let full_invalid_request = Request::Headers(invalid_request.clone());
+		let empty_response = HeadersResponse::empty();
+		let full_empty_response = Response::Headers(empty_response.clone());
+
+		check_roundtrip(invalid_request);
+		check_roundtrip(full_invalid_request);
+		check_roundtrip(empty_response);
+		check_roundtrip(full_empty_response);
+	}
+
+	#[test]
 	fn headers_roundtrip() {
 		let req = IncompleteHeadersRequest {
-			start: Field::Scalar(5u64.into()),
-			skip: 0,
-			max: 100,
-			reverse: false,
+			inner: Some(IncompleteHeaderRequestInner {
+				start: Field::Scalar(5u64.into()),
+				skip: 0,
+				max: 100,
+				reverse: false,
+			}),
 		};
 
 		let full_req = Request::Headers(req.clone());
@@ -1743,6 +1827,15 @@ mod tests {
 		check_roundtrip(full_res);
 	}
 
+	#[test]
+	fn header_proof_empty_response() {
+		let empty_response = HeaderProofResponse::empty();
+		let full_response = Response::HeaderProof(empty_response.clone());
+
+		check_roundtrip(empty_response);
+		check_roundtrip(full_response);
+	}
+	
 	#[test]
 	fn header_proof_roundtrip() {
 		let req = IncompleteHeaderProofRequest {
@@ -1764,16 +1857,33 @@ mod tests {
 	}
 
 	#[test]
+	fn invalid_transaction_index_roundtrip() {
+		let invalid_request = IncompleteTransactionIndexRequest {
+			hash: None,
+		};
+		let full_invalid_request = Request::TransactionIndex(invalid_request.clone());
+		let empty_response = TransactionIndexResponse::empty();
+		let full_empty_reponse = Response::TransactionIndex(empty_response.clone());
+
+		check_roundtrip(invalid_request);
+		check_roundtrip(full_invalid_request);
+		check_roundtrip(empty_response);
+		check_roundtrip(full_empty_reponse);
+	}
+	
+	#[test]
 	fn transaction_index_roundtrip() {
 		let req = IncompleteTransactionIndexRequest {
-			hash: Field::Scalar(Default::default()),
+			hash: Some(Field::Scalar(Default::default())),
 		};
 
 		let full_req = Request::TransactionIndex(req.clone());
 		let res = TransactionIndexResponse {
-			num: 1000,
-			hash: ::ethereum_types::H256::random(),
-			index: 4,
+			inner: Some(TransactionIndexResponseInner {
+				num: 1000,
+				hash: ::ethereum_types::H256::random(),
+				index: 4,
+			}),
 		};
 		let full_res = Response::TransactionIndex(res.clone());
 
@@ -1783,6 +1893,16 @@ mod tests {
 		check_roundtrip(full_res);
 	}
 
+	#[test]
+	fn invalid_receipt_response() {
+		use ethcore::receipt::{Receipt, TransactionOutcome};
+		let empty_response = ReceiptsResponse::empty();
+		let empty_full_response = Response::Receipts(empty_response.clone());
+
+		check_roundtrip(empty_response);
+		check_roundtrip(empty_full_response);
+	}
+	
 	#[test]
 	fn receipts_roundtrip() {
 		use ethcore::receipt::{Receipt, TransactionOutcome};
@@ -1803,6 +1923,17 @@ mod tests {
 		check_roundtrip(full_res);
 	}
 
+	#[test]
+	fn empty_body_response() {
+		use transaction::{Transaction, UnverifiedTransaction};
+
+		let empty_response = BodyResponse::empty();
+		let full_empty_response = Response::Body(empty_response.clone());
+
+		check_roundtrip(empty_response);
+		check_roundtrip(full_empty_response);
+	}
+	
 	#[test]
 	fn body_roundtrip() {
 		use transaction::{Transaction, UnverifiedTransaction};
@@ -1829,6 +1960,16 @@ mod tests {
 		check_roundtrip(res);
 		check_roundtrip(full_res);
 	}
+	
+	#[test]
+	fn empty_account_response() {
+
+		let empty_response = AccountResponse::empty();
+		let full_empty_response= Response::Account(empty_response.clone());
+
+		check_roundtrip(empty_response);
+		check_roundtrip(full_empty_response);
+	}
 
 	#[test]
 	fn account_roundtrip() {
@@ -1854,6 +1995,15 @@ mod tests {
 	}
 
 	#[test]
+	fn empty_storage_response() {
+		let res = StorageResponse::empty();
+		let full_res = Response::Storage(res.clone());
+
+		check_roundtrip(res);
+		check_roundtrip(full_res);
+	}
+	
+	#[test]
 	fn storage_roundtrip() {
 		let req = IncompleteStorageRequest {
 			block_hash: Field::Scalar(Default::default()),
@@ -1873,6 +2023,15 @@ mod tests {
 		check_roundtrip(res);
 		check_roundtrip(full_res);
 	}
+	
+	#[test]
+	fn empty_code_response() {
+		let res = CodeResponse::empty();
+		let full_res = Response::Code(res.clone());
+
+		check_roundtrip(res);
+		check_roundtrip(full_res);
+	}
 
 	#[test]
 	fn code_roundtrip() {
@@ -1889,6 +2048,16 @@ mod tests {
 
 		check_roundtrip(req);
 		check_roundtrip(full_req);
+		check_roundtrip(res);
+		check_roundtrip(full_res);
+	}
+	
+	#[test]
+	fn empty_execution_response() {
+		use kvdb::DBValue;
+		let res = ExecutionResponse::empty();
+		let full_res = Response::Execution(res.clone());
+
 		check_roundtrip(res);
 		check_roundtrip(full_res);
 	}
@@ -1990,5 +2159,14 @@ mod tests {
 		check_roundtrip(full_req);
 		check_roundtrip(res);
 		check_roundtrip(full_res);
+	}
+	
+	#[test]
+	fn epoch_empty_response() {
+		let empty_response = SignalResponse::empty();
+		let full_empty_response = Response::Signal(empty_response.clone());
+
+		check_roundtrip(empty_response);
+		check_roundtrip(full_empty_response);
 	}
 }

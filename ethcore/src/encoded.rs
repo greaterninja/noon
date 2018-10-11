@@ -33,7 +33,7 @@ use transaction::UnverifiedTransaction;
 use views::{self, BlockView, HeaderView, BodyView};
 
 /// Owning header view.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Header(Vec<u8>);
 
 impl HeapSizeOf for Header {
@@ -62,13 +62,22 @@ impl Header {
 	/// Consume the view and return the raw bytes.
 	pub fn into_inner(self) -> Vec<u8> { self.0 }
 
-	/// Header is empty
-	pub fn is_empty(&self) -> bool { self.0.is_empty() }
+	/// Create a empty encoded Header
+	pub fn empty() -> Self {
+		let mut rlp = RlpStream::new_list(1);
+		rlp.append(&rlp::EMPTY_LIST_RLP[0]);
+		Header(rlp.out())
+	}
 }
 
 // forwarders to borrowed view.
 impl Header {
-	/// Returns the header hash.
+	/// Is a empty Header
+	pub fn is_empty(&self) -> bool {
+		self.0 == rlp::EMPTY_LIST_RLP
+	}
+	
+		/// Returns the header hash.
 	pub fn hash(&self) -> H256 { keccak(&self.0) }
 
 	/// Returns the parent hash.
