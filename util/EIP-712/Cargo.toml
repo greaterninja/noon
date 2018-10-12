@@ -21,6 +21,4 @@ regex = "1.0"
 validator = "0.8"
 validator_derive = "0.8"
 lunarity = { git = "https://github.com/paritytech/lunarity" }
-
-[dev-dependencies]
-hex = "0.3"
+rustc-hex = "2.0"

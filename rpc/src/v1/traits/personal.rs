@@ -42,7 +42,7 @@ build_rpc_trait! {
 		#[rpc(name = "personal_sign")]
 		fn sign(&self, Bytes, H160, String) -> BoxFuture<H520>;
 
-		/// Produces an EIP-720 compliant signature with given account using the given password to unlock the
+		/// Produces an EIP-712 compliant signature with given account using the given password to unlock the
 		/// account during the request.
 		#[rpc(name = "personal_signTypedData")]
 		fn sign_typed_data(&self, EIP712, H160, String) -> BoxFuture<H520>;

@@ -26,10 +26,13 @@ use serde_json::to_value;
 use parser::{Parser, Type};
 use error::{Result, ErrorKind, serde_error};
 use eip712::{EIP712, MessageTypes};
+use rustc_hex::FromHex;
+use validator::Validate;
+use std::collections::HashSet;
 
 /// given a type and HashMap<String, Vec<FieldType>>
 /// returns a HashSet of dependent types of the given type
-fn build_dependencies<'a>(message_type: &'a str, message_types: &'a MessageTypes) -> Option<(LinkedHashSet<&'a str>)>
+fn build_dependencies<'a>(message_type: &'a str, message_types: &'a MessageTypes) -> Option<(HashSet<&'a str>)>
 {
 	if message_types.get(message_type).is_none() {
 		return None;
@@ -37,7 +40,7 @@ fn build_dependencies<'a>(message_type: &'a str, message_types: &'a MessageTypes
 
 	let mut types = LinkedHashSet::new();
 	types.insert(message_type);
-	let mut deps = LinkedHashSet::new();
+	let mut deps = HashSet::new();
 
 	while let Some(item) = types.pop_back() {
 		if let Some(fields) = message_types.get(item) {
@@ -103,7 +106,7 @@ fn encode_data(
 				items.append(&mut encoded);
 			}
 
-			keccak(items).0.to_vec()
+			keccak(items).to_vec()
 		}
 
 		Type::Custom(ref ident) if message_types.get(&*ident).is_some() => {
@@ -117,26 +120,44 @@ fn encode_data(
 				tokens.append(&mut encoded);
 			}
 
-			keccak(tokens).0.to_vec()
+			keccak(tokens).to_vec()
 		}
 
-		Type::Bytes(size) => {
+		Type::Bytes => {
 			let string = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
 			if string.len() < 2 {
 				return Err(ErrorKind::HexParseError(
 					format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
 				)?
 			}
-			let mut bytes = H256::from_str(&string[2..]).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
-			if *size == 32 {
-				bytes = keccak(&bytes);
+			let bytes = (&string[2..])
+				.from_hex::<Vec<u8>>()
+				.map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
+			let bytes = keccak(&bytes).to_vec();
+
+			encode(&[EthAbiToken::FixedBytes(bytes)])
+		}
+
+		Type::Byte(_) => {
+			let string = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
+			if string.len() < 2 {
+				return Err(ErrorKind::HexParseError(
+					format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
+				)?
 			}
-			encode(&[EthAbiToken::FixedBytes(bytes.to_vec())])
+			let mut bytes = (&string[2..])
+				.from_hex::<Vec<u8>>()
+				.map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
+
+			if *message_type == Type::Bytes {
+				bytes = keccak(&bytes).to_vec();
+			}
+			encode(&[EthAbiToken::FixedBytes(bytes)])
 		}
 
 		Type::String => {
 			let value = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
-			let hash = (&keccak(value)).to_vec();
+			let hash = keccak(value).to_vec();
 			encode(&[EthAbiToken::FixedBytes(hash)])
 		}
 
@@ -152,19 +173,13 @@ fn encode_data(
 		}
 
 		Type::Uint | Type::Int => {
-			// try to deserialize as a number first, then a string
-			let uint = match (value.as_u64(), value.as_str()) {
-				(Some(number), _) => U256::from(number),
-				(_, Some(string)) => {
-					if string.len() < 2 {
-						return Err(ErrorKind::HexParseError(
-							format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
-						)?
-					}
-					U256::from_str(&string[2..]).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?
-				}
-				_ => return Err(serde_error("int/uint", field_name))?
-			};
+			let string = value.as_str().ok_or_else(|| serde_error("int/uint", field_name))?;
+			if string.len() < 2 {
+				return Err(ErrorKind::HexParseError(
+					format!("Expected a 0x-prefixed string of even length, found {} length string", string.len()))
+				)?
+			}
+			let uint = U256::from_str(&string[2..]).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
 
 			let token = if *message_type == Type::Uint {
 				EthAbiToken::Uint(uint)
@@ -182,6 +197,8 @@ fn encode_data(
 
 /// encodes and hashes the given EIP712 struct
 pub fn hash_structured_data(typed_data: EIP712) -> Result<Vec<u8>> {
+	// validate input
+	typed_data.validate()?;
 	// EIP-191 compliant
 	let prefix = (b"\x19\x01").to_vec();
 	let domain = to_value(&typed_data.domain).unwrap();
@@ -191,14 +208,14 @@ pub fn hash_structured_data(typed_data: EIP712) -> Result<Vec<u8>> {
 		encode_data(&parser, &Type::Custom(typed_data.primary_type), &typed_data.types, &typed_data.message, None)?
 	);
 	let concat = [&prefix[..], &domain_hash[..], &data_hash[..]].concat();
-	Ok((&keccak(concat)).to_vec())
+	Ok(keccak(concat).to_vec())
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use serde_json::from_str;
-	use hex;
+	use rustc_hex::ToHex;
 
 	const JSON: &'static str = r#"{
 		"primaryType": "Mail",
@@ -263,7 +280,7 @@ mod tests {
 		let person = "Person";
 
 		let hashset = {
-			let mut temp = LinkedHashSet::new();
+			let mut temp = HashSet::new();
 			temp.insert(mail);
 			temp.insert(person);
 			temp
@@ -321,7 +338,7 @@ mod tests {
 
 		let value = from_str::<MessageTypes>(string).expect("alas error!");
 		let mail = &String::from("Mail");
-		let hash = hex::encode(type_hash(&mail, &value).expect("alas error!").0);
+		let hash = (type_hash(&mail, &value).expect("alas error!").0).to_hex::<String>();
 		assert_eq!(
 			hash,
 			"a0cedeb2dc280ba39b857546d74f5549c3a1d7bdc2dd96bf881f76108e23dac2"
@@ -332,7 +349,7 @@ mod tests {
 	fn test_hash_data() {
 		let typed_data = from_str::<EIP712>(JSON).expect("alas error!");
 		assert_eq!(
-			hex::encode(hash_structured_data(typed_data).expect("alas error!")),
+			hash_structured_data(typed_data).expect("alas error!").to_hex::<String>(),
 			"be609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2"
 		)
 	}

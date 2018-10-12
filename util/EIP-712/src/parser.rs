@@ -27,7 +27,8 @@ pub enum Type {
 	Int,
 	String,
 	Bool,
-	Bytes(u8),
+	Bytes,
+	Byte(u8),
 	Custom(String),
 	Array(Box<Type>)
 }
@@ -40,9 +41,13 @@ impl From<Type> for String {
 			Type::Int => "int".into(),
 			Type::String => "string".into(),
 			Type::Bool => "bool".into(),
-			Type::Bytes(len) => format!("bytes{}", len),
+			Type::Bytes => "bytes".into(),
+			Type::Byte(len) => format!("bytes{}", len),
 			Type::Custom(custom) => custom,
-			Type::Array(type_) => (*type_).into()
+			Type::Array(type_) => {
+				let type_: String = (*type_).into();
+				format!("{}[]", type_)
+			}
 		}
 	}
 }
@@ -71,7 +76,8 @@ impl Parser {
 		while lexer.token != Token::EndOfProgram  {
 			let type_ = match lexer.token {
 				Token::Identifier => Type::Custom(lexer.token_as_str().to_owned()),
-				Token::TypeByte => Type::Bytes(lexer.type_size.0),
+				Token::TypeByte => Type::Byte(lexer.type_size.0),
+				Token::TypeBytes => Type::Bytes,
 				Token::TypeBool => Type::Bool,
 				Token::TypeUint => Type::Uint,
 				Token::TypeInt => Type::Int,

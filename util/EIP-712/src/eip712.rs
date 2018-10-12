@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use ethereum_types::{U256, H256, Address};
 use regex::Regex;
 use validator::Validate;
+use validator::ValidationErrors;
 
 pub(crate) type MessageTypes = HashMap<String, Vec<FieldType>>;
 
@@ -31,7 +32,7 @@ lazy_static! {
 
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Validate, Debug, Clone)]
 pub(crate) struct EIP712Domain {
 	pub(crate) name: String,
 	pub(crate) version: String,
@@ -49,6 +50,17 @@ pub struct EIP712 {
 	pub(crate) primary_type: String,
 	pub(crate) message: Value,
 	pub(crate) domain: EIP712Domain,
+}
+
+impl Validate for EIP712 {
+	fn validate(&self) -> Result<(), ValidationErrors> {
+		for (_, field_types) in self.types.iter() {
+			for field_type in field_types {
+				field_type.validate()?;
+			}
+		}
+		Ok(())
+	}
 }
 
 #[derive(Serialize, Deserialize, Validate, Debug, Clone)]
@@ -118,5 +130,49 @@ mod tests {
 			}
         }"#;
 		let _ = from_str::<EIP712>(string).unwrap();
+	}
+
+	#[test]
+	fn test_failing_deserialization() {
+		use error::Error;
+		let string = r#"{
+            "primaryType": "Mail",
+			"domain": {
+				"name": "Ether Mail",
+				"version": "1",
+				"chainId": "0x1",
+				"verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
+			},
+			"message": {
+				"from": {
+					"name": "Cow",
+					"wallet": "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"
+				},
+				"to": {
+					"name": "Bob",
+					"wallet": "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"
+				},
+				"contents": "Hello, Bob!"
+			},
+			"types": {
+				"EIP712Domain": [
+				    { "name": "name", "type": "string" },
+					{ "name": "version", "type": "string" },
+					{ "name": "chainId", "type": "7uint256[x] Seun" },
+					{ "name": "verifyingContract", "type": "address" }
+				],
+				"Person": [
+					{ "name": "name", "type": "string" },
+					{ "name": "wallet amen", "type": "address" }
+				],
+				"Mail": [
+					{ "name": "from", "type": "Person" },
+					{ "name": "to", "type": "Person" },
+					{ "name": "contents", "type": "string" }
+				]
+			}
+        }"#;
+		let data = from_str::<EIP712>(string).unwrap();
+		assert_eq!(data.validate().is_err(), true);
 	}
 }

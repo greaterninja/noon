@@ -16,6 +16,8 @@
 
 use std::fmt::{self, Display};
 use failure::{Fail, Context, Backtrace};
+use validator::ValidationErrors;
+use validator::ValidationErrorsKind;
 
 pub(crate) type Result<T> = ::std::result::Result<T, Error>;
 /// Error type
@@ -42,18 +44,15 @@ pub enum ErrorKind {
 	/// the field was declared with a unknown type
 	#[fail(display = "The field '{}' has an unknown type '{}'", _0, _1)]
 	UnknownType(String, String),
-	/// the array type had an
-	#[fail(display = "The field '{}' has a closing ']' but not an opening '['", _0)]
-	ArrayParseError(String),
-	/// schema validation error
-	#[fail(display = "{}", _0)]
-	SchemaValidationError(String),
 	/// Unexpected token
 	#[fail(display = "Unexpected token '{}' while parsing typename '{}'", _0, _1)]
 	UnexpectedToken(String, String),
-	/// the user has attempted to define an typed array with a depth > 10
+	/// the user has attempted to define a typed array with a depth > 10
 	#[fail(display = "Maximum depth for nested arrays is 10")]
-	UnsupportedArrayDepth
+	UnsupportedArrayDepth,
+	/// FieldType validation error
+	#[fail(display = "{}", _0)]
+	ValidationError(String)
 }
 
 pub(crate) fn serde_error(expected: &str, field: Option<&str>) -> ErrorKind {
@@ -92,5 +91,29 @@ impl From<ErrorKind> for Error {
 impl From<Context<ErrorKind>> for Error {
 	fn from(inner: Context<ErrorKind>) -> Error {
 		Error { inner }
+	}
+}
+
+impl From<ValidationErrors> for Error {
+	fn from(error: ValidationErrors) -> Self {
+		let mut string: String = "".into();
+		for (field_name, error_kind) in error.errors() {
+			match error_kind {
+				ValidationErrorsKind::Field(validation_errors) => {
+					for error in validation_errors {
+						let str_error = format!(
+							"the field '{}', has an invalid value {}, ",
+							field_name,
+							error.params["value"]
+						);
+						string.push_str(&str_error);
+					}
+				},
+				// #[validate] is only used on fields for regex
+				// its impossible to get any other errorkind
+				_ => unreachable!()
+			}
+		}
+		ErrorKind::ValidationError(string).into()
 	}
 }

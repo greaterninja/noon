@@ -15,9 +15,8 @@
 // along with Parity.  If not, see <http://www.gnu.org/licenses/>.
 
 //! EIP-712 encoding utilities
-#![warn(missing_docs)]
+#![warn(missing_docs, unused_extern_crates)]
 
-extern crate serde;
 extern crate serde_json;
 extern crate ethabi;
 extern crate ethereum_types;
@@ -37,9 +36,7 @@ extern crate failure_derive;
 extern crate serde_derive;
 #[macro_use]
 extern crate lazy_static;
-
-#[cfg(test)]
-extern crate hex;
+extern crate rustc_hex;
 
 mod eip712;
 mod error;
