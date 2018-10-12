@@ -288,14 +288,15 @@ fn credit_overflow() {
 	}
 
 	// 1 billion requests is far too many for the default flow params.
-	let requests = encode_single(Request::Headers(IncompleteHeadersRequest {
-		inner: Some(IncompleteHeaderRequestInner {
+	let requests = encode_single(
+		Request::Headers(IncompleteHeadersRequest {
 			start: HashOrNumber::Number(1).into(),
 			max: 1_000_000_000,
 			skip: 0,
 			reverse: false,
-		}),
-	}));
+		})
+	);
+
 	let request = make_packet(111, &requests);
 
 	proto.handle_packet(&Expect::Punish(1), 1, packet::REQUEST, &request);
@@ -324,14 +325,14 @@ fn get_block_headers() {
 		proto.handle_packet(&Expect::Nothing, 1, packet::STATUS, &my_status);
 	}
 
-	let request = Request::Headers(IncompleteHeadersRequest {
-		inner: Some(IncompleteHeaderRequestInner {
+	let request = Request::Headers(
+		IncompleteHeadersRequest {
 			start: HashOrNumber::Number(1).into(),
 			max: 10,
 			skip: 0,
 			reverse: false,
-		}),
-	});
+		}
+	);
 
 	let req_id = 111;
 
@@ -355,6 +356,7 @@ fn get_block_headers() {
 	let expected = Expect::Respond(packet::RESPONSE, response);
 	proto.handle_packet(&expected, 1, packet::REQUEST, &request_body);
 }
+
 
 #[test]
 fn get_block_bodies() {
@@ -677,14 +679,14 @@ fn id_guard() {
 	let req_id_1 = ReqId(5143);
 	let req_id_2 = ReqId(1111);
 
-	let req = encode_single(Request::Headers(IncompleteHeadersRequest {
-		inner: Some(IncompleteHeaderRequestInner {
-			start: HashOrNumber::Number(5u64).into(),
-			max: 100,
-			skip: 0,
-			reverse: false,
-		}),
-	}));
+	let req = encode_single(
+		Request::Headers(IncompleteHeadersRequest {
+				start: HashOrNumber::Number(5u64).into(),
+				max: 100,
+				skip: 0,
+				reverse: false,
+		})
+	);
 
 	let peer_id = 9876;
 

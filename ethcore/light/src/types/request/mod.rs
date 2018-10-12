@@ -25,7 +25,6 @@ mod batch;
 pub use self::header::{
 	Complete as CompleteHeadersRequest,
 	Incomplete as IncompleteHeadersRequest,
-	IncompleteInner as IncompleteHeaderRequestInner,
 	Response as HeadersResponse
 };
 pub use self::header_proof::{
@@ -682,16 +681,9 @@ pub mod header {
 	use ethcore::encoded;
 	use rlp::{Encodable, Decodable, DecoderError, RlpStream, Rlp};
 
-	/// Incomplete header request represent a valid or invalid request
-	#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
-	pub struct Incomplete {
-		/// Container type to represent a valid or invalid `Header request`
-		 pub inner: Option<IncompleteInner>,
-	}
-
 	/// Incomplete header request
 	#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
-	pub struct IncompleteInner {
+	pub struct Incomplete {
 		/// Start block.
 		pub start: Field<HashOrNumber>,
 		/// Skip between.
@@ -709,43 +701,35 @@ pub mod header {
 		fn check_outputs<F>(&self, mut f: F) -> Result<(), NoSuchOutput>
 			where F: FnMut(usize, usize, OutputKind) -> Result<(), NoSuchOutput>
 		{
-			match self.inner.as_ref().map(|s| &s.start) {
-				Some(Field::Scalar(_)) => Ok(()),
-				Some(Field::BackReference(req, idx)) => f(*req, *idx, OutputKind::Hash).or_else(|_| f(*req, *idx, OutputKind::Number)),
-			_ => Err(NoSuchOutput),
+			match self.start {
+				Field::Scalar(_) => Ok(()),
+				Field::BackReference(req, idx) => f(req, idx, OutputKind::Hash).or_else(|_| f(req, idx, OutputKind::Number)),
 			}
 		}
 
 		fn note_outputs<F>(&self, _: F) where F: FnMut(usize, OutputKind) { }
 
 		fn fill<F>(&mut self, oracle: F) where F: Fn(usize, usize) -> Result<Output, NoSuchOutput> {
-			self.inner.as_mut().map(|s| {
-				if let Field::BackReference(req, idx) = s.start {
-					s.start = match oracle(req, idx) {
-						Ok(Output::Hash(hash)) => Field::Scalar(hash.into()),
-						Ok(Output::Number(num)) => Field::Scalar(num.into()),
-						Err(_) => Field::BackReference(req, idx),
-					}
+			if let Field::BackReference(req, idx) = self.start {
+				self.start = match oracle(req, idx) {
+					Ok(Output::Hash(hash)) => Field::Scalar(hash.into()),
+					Ok(Output::Number(num)) => Field::Scalar(num.into()),
+					Err(_) => Field::BackReference(req, idx),
 				}
-			});
+			}
 		}
 
 		fn complete(self) -> Result<Self::Complete, NoSuchOutput> {
-			let inner = match self.inner {
-				Some(inner) => inner,
-				None => return Err(NoSuchOutput),
-			};
-
 			Ok(Complete {
-				start: inner.start.into_scalar()?,
-				skip: inner.skip,
-				max: inner.max,
-				reverse: inner.reverse,
+				start: self.start.into_scalar()?,
+				skip: self.skip,
+				max: self.max,
+				reverse: self.reverse,
 			})
 		}
 
 		fn adjust_refs<F>(&mut self, mapping: F) where F: FnMut(usize) -> usize {
-			self.inner.as_mut().map(|s| s.start.adjust_req(mapping));
+			self.start.adjust_req(mapping)
 		}
 	}
 
@@ -1783,14 +1767,10 @@ mod tests {
 	}
 
 	#[test]
-	fn empty_headers_roundtrip() {
-		let invalid_request = IncompleteHeadersRequest { inner: None };
-		let full_invalid_request = Request::Headers(invalid_request.clone());
+	fn empty_headers_response_roundtrip() {
 		let empty_response = HeadersResponse::empty();
 		let full_empty_response = Response::Headers(empty_response.clone());
 
-		check_roundtrip(invalid_request);
-		check_roundtrip(full_invalid_request);
 		check_roundtrip(empty_response);
 		check_roundtrip(full_empty_response);
 	}
@@ -1798,12 +1778,10 @@ mod tests {
 	#[test]
 	fn headers_roundtrip() {
 		let req = IncompleteHeadersRequest {
-			inner: Some(IncompleteHeaderRequestInner {
-				start: Field::Scalar(5u64.into()),
-				skip: 0,
-				max: 100,
-				reverse: false,
-			}),
+			start: Field::Scalar(5u64.into()),
+			skip: 0,
+			max: 100,
+			reverse: false,
 		};
 
 		let full_req = Request::Headers(req.clone());
