@@ -165,8 +165,6 @@ impl<T: super::CheckedRequest + Clone> Batch<T> {
 		let extracted = self.requests[idx]
 			.check_response(&completed, env, response).map_err(ResponseError::Validity)?;
 
-                println!("respons success");
-
 		self.supply_response_unchecked(response);
 		Ok(extracted)
 	}

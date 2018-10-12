@@ -881,8 +881,7 @@ pub mod header_proof {
 	impl Response {
 		/// Create an empty response
 		pub fn empty() -> Self {
-			let mut rlp = RlpStream::new_list(1);
-			rlp.append(&rlp::EMPTY_LIST_RLP[0]);
+			let rlp = RlpStream::new_list(0);
 			Self {
 				proof: vec![rlp.out()],
 				hash: 0.into(),
@@ -978,7 +977,7 @@ pub mod transaction_index {
 		/// The transaction hash to get index for.
 		pub hash: H256,
 	}
-	
+
 	/// .Inner transaction index
 	#[derive(Debug, Default, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
 	pub struct InnerResponse {
@@ -1157,8 +1156,8 @@ pub mod block_body {
 		/// empty block body response
 		pub fn empty() -> Self {
 			let mut rlp = RlpStream::new_list(2);
-			rlp.append(&rlp::EMPTY_LIST_RLP[0]);
-			rlp.append(&rlp::EMPTY_LIST_RLP[0]);
+			rlp.append_empty_data();
+			rlp.append_empty_data();
 			Self { body: encoded::Body::new(rlp.out()) }
 		}
 	}
@@ -1280,7 +1279,7 @@ pub mod account {
 		/// Account's storage trie root.
 		pub storage_root: H256,
 	}
-	
+
 	impl Response {
 		/// empty block body response
 		pub fn empty() -> Self {
@@ -1397,7 +1396,7 @@ pub mod storage {
 		/// Storage value.
 		pub value: H256,
 	}
-	
+
 	impl Response {
 		/// empty block body response
 		pub fn empty() -> Self {
@@ -1491,7 +1490,7 @@ pub mod contract_code {
 		/// The requested code.
 		pub code: Bytes,
 	}
-	
+
 	impl Response {
 		/// empty block body response
 		pub fn empty() -> Self {
@@ -1599,7 +1598,7 @@ pub mod execution {
 		/// All state items (trie nodes, code) necessary to re-prove the transaction.
 		pub items: Vec<DBValue>,
 	}
-	
+
 	impl Response {
 		/// empty block body response
 		pub fn empty() -> Self {
@@ -1715,12 +1714,11 @@ pub mod epoch_signal {
 		/// The requested epoch signal.
 		pub signal: Bytes,
 	}
-	
+
 	impl Response {
 		/// empty block body response
 		pub fn empty() -> Self {
-			let mut rlp = RlpStream::new_list(1);
-			rlp.append(&rlp::EMPTY_LIST_RLP[0]);
+			let rlp = RlpStream::new_list(0);
 			Self { signal: rlp.out() }
 		}
 	}
@@ -1830,7 +1828,7 @@ mod tests {
 		check_roundtrip(empty_response);
 		check_roundtrip(full_response);
 	}
-	
+
 	#[test]
 	fn header_proof_roundtrip() {
 		let req = IncompleteHeaderProofRequest {
@@ -1865,7 +1863,7 @@ mod tests {
 		check_roundtrip(empty_response);
 		check_roundtrip(full_empty_reponse);
 	}
-	
+
 	#[test]
 	fn transaction_index_roundtrip() {
 		let req = IncompleteTransactionIndexRequest {
@@ -1890,14 +1888,13 @@ mod tests {
 
 	#[test]
 	fn invalid_receipt_response() {
-		use ethcore::receipt::{Receipt, TransactionOutcome};
 		let empty_response = ReceiptsResponse::empty();
 		let empty_full_response = Response::Receipts(empty_response.clone());
 
 		check_roundtrip(empty_response);
 		check_roundtrip(empty_full_response);
 	}
-	
+
 	#[test]
 	fn receipts_roundtrip() {
 		use ethcore::receipt::{Receipt, TransactionOutcome};
@@ -1920,15 +1917,13 @@ mod tests {
 
 	#[test]
 	fn empty_body_response() {
-		use transaction::{Transaction, UnverifiedTransaction};
-
 		let empty_response = BodyResponse::empty();
 		let full_empty_response = Response::Body(empty_response.clone());
 
 		check_roundtrip(empty_response);
 		check_roundtrip(full_empty_response);
 	}
-	
+
 	#[test]
 	fn body_roundtrip() {
 		use transaction::{Transaction, UnverifiedTransaction};
@@ -1955,7 +1950,7 @@ mod tests {
 		check_roundtrip(res);
 		check_roundtrip(full_res);
 	}
-	
+
 	#[test]
 	fn empty_account_response() {
 
@@ -1997,7 +1992,7 @@ mod tests {
 		check_roundtrip(res);
 		check_roundtrip(full_res);
 	}
-	
+
 	#[test]
 	fn storage_roundtrip() {
 		let req = IncompleteStorageRequest {
@@ -2018,7 +2013,7 @@ mod tests {
 		check_roundtrip(res);
 		check_roundtrip(full_res);
 	}
-	
+
 	#[test]
 	fn empty_code_response() {
 		let res = CodeResponse::empty();
@@ -2046,10 +2041,9 @@ mod tests {
 		check_roundtrip(res);
 		check_roundtrip(full_res);
 	}
-	
+
 	#[test]
 	fn empty_execution_response() {
-		use kvdb::DBValue;
 		let res = ExecutionResponse::empty();
 		let full_res = Response::Execution(res.clone());
 
@@ -2155,7 +2149,7 @@ mod tests {
 		check_roundtrip(res);
 		check_roundtrip(full_res);
 	}
-	
+
 	#[test]
 	fn epoch_empty_response() {
 		let empty_response = SignalResponse::empty();

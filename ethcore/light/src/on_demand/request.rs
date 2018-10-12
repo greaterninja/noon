@@ -437,7 +437,7 @@ impl CheckedRequest {
 								}
 								None => return None,
 							};
-						}	
+						}
 						Some(Response::HeaderWithAncestors(result))
 					} else {
 						return None
@@ -830,9 +830,9 @@ impl HeaderWithAncestors {
 	) -> Result<Vec<encoded::Header>, Error> {
 		let expected_hash = match (self.block_hash, start) {
 			(Field::Scalar(h), &net_request::HashOrNumber::Hash(h2)) => {
-				if h != h2 { 
+				if h != h2 {
 					trace!(target: "on_demand", "HeaderWithAncestors bad hash");
-					return Err(Error::WrongHash(h, h2)) 
+					return Err(Error::WrongHash(h, h2))
 				}
 				h
 			}

@@ -64,9 +64,9 @@ impl Header {
 
 	/// Create a empty encoded Header
 	pub fn empty() -> Self {
-		let mut rlp = RlpStream::new_list(1);
-		rlp.append(&rlp::EMPTY_LIST_RLP[0]);
-		Header(rlp.out())
+		// vec![0xc0]
+		let empty_list = RlpStream::new_list(0);
+		Header(empty_list.out())
 	}
 }
 
@@ -74,10 +74,11 @@ impl Header {
 impl Header {
 	/// Is a empty Header
 	pub fn is_empty(&self) -> bool {
-		self.0 == rlp::EMPTY_LIST_RLP
+		let rlp = Rlp::new(&self.0);
+		rlp.is_empty()
 	}
-	
-		/// Returns the header hash.
+
+	/// Returns the header hash.
 	pub fn hash(&self) -> H256 { keccak(&self.0) }
 
 	/// Returns the parent hash.

@@ -450,7 +450,7 @@ pub fn filter_block_not_found(id: BlockId) -> Error {
 			BlockId::Number(number) => format!("{:#x}", number),
 			BlockId::Earliest => "earliest".to_string(),
 			BlockId::Latest => "latest".to_string(),
-                        BlockId::Invalid => "invalid".to_string(),
+			BlockId::Invalid => "invalid block".to_string(),
 		})),
 	}
 }

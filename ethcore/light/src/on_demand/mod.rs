@@ -42,6 +42,9 @@ use self::request::CheckedRequest;
 
 pub use self::request::{Request, Response, HeaderRef};
 
+use types::request::ResponseError as ResponseError;
+use self::request::Error as ValidityError;
+
 #[cfg(test)]
 mod tests;
 
@@ -255,7 +258,7 @@ impl Pending {
 		}
 	}
 
-	// returning a peer discovery timeout during query attempts
+	// Returning a peer discovery timeout during query attempts
 	fn time_out(self) {
 		trace!(target: "on_demand", "Dropping a pending query (no new peer time out) at query #{}", self.query_id_history.len());
 		let err = self::error::ErrorKind::TimeoutOnNewPeers(self.requests.num_answered(), self.query_id_history.len());
@@ -263,8 +266,8 @@ impl Pending {
 			debug!(target: "on_demand", "Dropped oneshot channel receiver on time out");
 		}
 	}
-	
-	// returning a faulty request error
+
+	// The given request is determined as faulty and drop it accordingly
 	fn set_as_faulty_request(self, total_peers: usize, req_id: ReqId) {
 		let bad_peers = self.bad_responses.len();
 		warn!(target: "on_demand", "The request: {} was determined as faulty, {}/{} peer(s) gave bad response", req_id, bad_peers, total_peers);
@@ -642,18 +645,42 @@ impl Handler for OnDemand {
 		for response in responses {
 			trace!(target: "on_demand", "got a response: {} {:?}", req_id, response);
 
-			// this does not punish a peer with bad response anymore because
-			// we can't actually tell whether the request or the provider was faulty
-			// so let's rely on the majority of the network instead
-			if let Err(e) = pending.supply_response(&*self.cache, response) {
-				let peer = ctx.peer();
-				trace!(target: "on_demand", "Peer {} gave bad response on req_id: {} because of: {:?}", peer, req_id, e);
-				pending.add_bad_response(peer);
-				let total_peers = self.peers.read().len();
-				if pending.is_bad_response(total_peers) {
-					pending.set_as_faulty_request(total_peers, req_id);
-					return;
+			match pending.supply_response(&*self.cache, response) {
+				Err(ResponseError::Validity(err)) => {
+					match err {
+						// This can be a malformed request or bad response but we can't determine which at the moment!
+						// Thus, register the response as bad and wait for more responses in order to take a decision
+						ValidityError::BadProof | ValidityError::Empty | ValidityError::HeaderByNumber | ValidityError::Trie(_) |
+						ValidityError::WrongHash(_, _) | ValidityError::WrongHeaderSequence | ValidityError::WrongNumber(_, _) |
+						ValidityError::WrongTrieRoot(_, _) | ValidityError::UnresolvedHeader(_) => {
+							let peer = ctx.peer();
+							trace!(target: "on_demand", "Peer {} gave a potential bad response on req_id: {} - can't determine whether
+								it was bad request or response yet", peer, req_id);
+							pending.add_bad_response(peer);
+							let total_peers = self.peers.read().len();
+
+							if pending.is_bad_response(total_peers) {
+								pending.set_as_faulty_request(total_peers, req_id);
+								return;
+							}
+						}
+
+						// Bad response, punish the peer
+						ValidityError::Decoder(_) | ValidityError::TooFewResults(_, _) | ValidityError::TooManyResults(_, _) | ValidityError::WrongKind => {
+							let peer = ctx.peer();
+							debug!(target: "on_demand", "Peer {} gave bad response", peer);
+							ctx.disable_peer(peer);
+						}
+					}
 				}
+
+				Err(ResponseError::Unexpected) => {
+					let peer = ctx.peer();
+					debug!(target: "on_demand", "Peer {} gave bad response", peer);
+					ctx.disable_peer(peer);
+				}
+				// `Good` response continue
+				_ => (),
 			}
 		}
 
