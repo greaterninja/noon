@@ -976,12 +976,12 @@ pub mod transaction_index {
 	/// The output of a request for transaction index.
 	#[derive(Debug, Default, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
 	pub struct Response {
-		/// ...
+		/// Wrapper type to represent a valid or invalid response
 		pub inner: Option<InnerResponse>,
 	}
 
 	impl Response {
-		/// empty
+		/// Is empty
 		pub fn empty() -> Self {
 			Default::default()
 		}

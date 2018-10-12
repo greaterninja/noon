@@ -171,7 +171,7 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 		let transaction_receipt = self
 			.transaction_receipt(TransactionId::Hash(req.hash))
 			.map_or_else(
-				|| request::TransactionIndexResponse::empty(),
+				request::TransactionIndexResponse::empty,
 				|receipt| request::TransactionIndexResponse {
 					inner: Some(request::TransactionIndexResponseInner {
 						num: receipt.block_number,
@@ -361,10 +361,16 @@ impl<T: ProvingBlockChainClient + ?Sized> Provider for T {
 			data: req.data,
 		}.fake_sign(req.from);
 
-		let transaction_proof = self.prove_transaction(transaction, id)
-			.map_or_else(|| request::ExecutionResponse::empty(), |(_, proof)| request::ExecutionResponse { items: proof });
+		let mut is_success = true;
+		let transaction_proof = self.prove_transaction(transaction, id).map_or_else(
+			|| {
+				is_success = false;
+				request::ExecutionResponse::empty()
+			},
+			|(_, proof)| request::ExecutionResponse { items: proof });
+
 		debug!(target: "pip_provider", "transaction_proof response (tx_hash {} from: {} value: {}) was successful: {}",
-				req.block_hash, req.from, req.value, !transaction_proof.items.is_empty());
+				req.block_hash, req.from, req.value, is_success);
 		trace!(target: "pip_provider", "transaction_proof: {:?}", transaction_proof);
 		transaction_proof
 	}

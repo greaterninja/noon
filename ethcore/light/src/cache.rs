@@ -94,7 +94,7 @@ impl Cache {
 
 	/// Query hash by number.
 	pub fn block_hash(&mut self, num: BlockNumber) -> Option<H256> {
-		self.canon_hashes.get_mut(&num).map(|h| *h)
+		self.canon_hashes.get_mut(&num).cloned()
 	}
 
 	/// Query block body by block hash.
@@ -109,7 +109,7 @@ impl Cache {
 
 	/// Query chain score by block hash.
 	pub fn chain_score(&mut self, hash: &H256) -> Option<U256> {
-		self.chain_score.get_mut(hash).map(|h| *h)
+		self.chain_score.get_mut(hash).cloned()
 	}
 
 	/// Cache the given header.
