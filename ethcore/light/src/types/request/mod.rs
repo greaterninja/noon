@@ -332,18 +332,25 @@ impl Request {
 
 impl Decodable for Request {
 	fn decode(rlp: &Rlp) -> Result<Self, DecoderError> {
-		match rlp.val_at::<Kind>(0)? {
-			Kind::Headers => Ok(Request::Headers(rlp.val_at(1)?)),
-			Kind::HeaderProof => Ok(Request::HeaderProof(rlp.val_at(1)?)),
-			Kind::TransactionIndex => Ok(Request::TransactionIndex(rlp.val_at(1)?)),
-			Kind::Receipts => Ok(Request::Receipts(rlp.val_at(1)?)),
-			Kind::Body => Ok(Request::Body(rlp.val_at(1)?)),
-			Kind::Account => Ok(Request::Account(rlp.val_at(1)?)),
-			Kind::Storage => Ok(Request::Storage(rlp.val_at(1)?)),
-			Kind::Code => Ok(Request::Code(rlp.val_at(1)?)),
-			Kind::Execution => Ok(Request::Execution(rlp.val_at(1)?)),
-			Kind::Signal => Ok(Request::Signal(rlp.val_at(1)?)),
+		let decoded_rlp = match rlp.val_at::<Kind>(0) {
+			Ok(Kind::Headers) => rlp.val_at(1).and_then(|rlp| Ok(Request::Headers(rlp))),
+			Ok(Kind::HeaderProof) => rlp.val_at(1).and_then(|rlp| Ok(Request::HeaderProof(rlp))),
+			Ok(Kind::TransactionIndex) => rlp.val_at(1).and_then(|rlp| Ok(Request::TransactionIndex(rlp))),
+			Ok(Kind::Receipts) => rlp.val_at(1).and_then(|rlp| Ok(Request::Receipts(rlp))),
+			Ok(Kind::Body) => rlp.val_at(1).and_then(|rlp| Ok(Request::Body(rlp))),
+			Ok(Kind::Account) => rlp.val_at(1).and_then(|rlp| Ok(Request::Account(rlp))),
+			Ok(Kind::Storage) => rlp.val_at(1).and_then(|rlp| Ok(Request::Storage(rlp))),
+			Ok(Kind::Code) => rlp.val_at(1).and_then(|rlp| Ok(Request::Code(rlp))),
+			Ok(Kind::Execution) => rlp.val_at(1).and_then(|rlp| Ok(Request::Execution(rlp))),
+			Ok(Kind::Signal) => rlp.val_at(1).and_then(|rlp| Ok(Request::Signal(rlp))),
+			Err(e) => Err(e),
+		};
+
+		if let Err(ref e) = decoded_rlp {
+			warn!(target: "on_demand", "RLP decode failed: {:?}", e);
 		}
+
+		decoded_rlp
 	}
 }
 
@@ -579,30 +586,18 @@ impl Response {
 
 impl Decodable for Response {
 	fn decode(rlp: &Rlp) -> Result<Self, DecoderError> {
-		trace!(target: "on_demand", "try decode response: {:?}", rlp);
-		let x = match rlp.val_at::<Kind>(0) {
-			Ok(Kind::Headers) => {
-				if rlp.val_at::<Response>(1).is_err() {
-					trace!(target: "on_demand", "header RLP decoding failed");
-				}
-				Ok(Response::Headers(rlp.val_at(1)?))
-			}
-			Ok(Kind::HeaderProof) => Ok(Response::HeaderProof(rlp.val_at(1)?)),
-			Ok(Kind::TransactionIndex) => Ok(Response::TransactionIndex(rlp.val_at(1)?)),
-			Ok(Kind::Receipts) => Ok(Response::Receipts(rlp.val_at(1)?)),
-			Ok(Kind::Body) => Ok(Response::Body(rlp.val_at(1)?)),
-			Ok(Kind::Account) => Ok(Response::Account(rlp.val_at(1)?)),
-			Ok(Kind::Storage) => Ok(Response::Storage(rlp.val_at(1)?)),
-			Ok(Kind::Code) => Ok(Response::Code(rlp.val_at(1)?)),
-			Ok(Kind::Execution) => Ok(Response::Execution(rlp.val_at(1)?)),
-			Ok(Kind::Signal) => Ok(Response::Signal(rlp.val_at(1)?)),
-			Err(err) => {
-                            trace!(target: "on_demand", "Response::Kind could not be decoded");
-                            return Err(err);
-                        }
-		};
-		trace!(target: "on_demand", "decode response SUCCESS: {:?}", x);
-		x
+		match rlp.val_at::<Kind>(0)? {
+			Kind::Headers => Ok(Response::Headers(rlp.val_at(1)?)),
+			Kind::HeaderProof => Ok(Response::HeaderProof(rlp.val_at(1)?)),
+			Kind::TransactionIndex => Ok(Response::TransactionIndex(rlp.val_at(1)?)),
+			Kind::Receipts => Ok(Response::Receipts(rlp.val_at(1)?)),
+			Kind::Body => Ok(Response::Body(rlp.val_at(1)?)),
+			Kind::Account => Ok(Response::Account(rlp.val_at(1)?)),
+			Kind::Storage => Ok(Response::Storage(rlp.val_at(1)?)),
+			Kind::Code => Ok(Response::Code(rlp.val_at(1)?)),
+			Kind::Execution => Ok(Response::Execution(rlp.val_at(1)?)),
+			Kind::Signal => Ok(Response::Signal(rlp.val_at(1)?)),
+		}
 	}
 }
 
@@ -687,14 +682,14 @@ pub mod header {
 	use ethcore::encoded;
 	use rlp::{Encodable, Decodable, DecoderError, RlpStream, Rlp};
 
-	/// Potentially incomplete headers request.
+	/// Incomplete header request represent a valid or invalid request
 	#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
 	pub struct Incomplete {
-		/// ....
+		/// Container type to represent a valid or invalid `Header request`
 		 pub inner: Option<IncompleteInner>,
 	}
 
-	/// ....
+	/// Incomplete header request
 	#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
 	pub struct IncompleteInner {
 		/// Start block.
